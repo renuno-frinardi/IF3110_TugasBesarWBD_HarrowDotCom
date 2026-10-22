@@ -13,7 +13,7 @@ import (
 
 func main() {
 	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
-		log.Fatalf("failed to load .env: %v; check that the file uses valid KEY=VALUE lines", err)
+		log.Fatalf("Failed to load .env: %v", err)
 	}
 
 	databaseURL := os.Getenv("DATABASE_URL")
@@ -34,5 +34,5 @@ func main() {
 		log.Fatalf("Failed to connect to PostgreSQL: %v", err)
 	}
 
-	fmt.Println("database connection successful")
+	fmt.Println("Database connection successful")
 }
