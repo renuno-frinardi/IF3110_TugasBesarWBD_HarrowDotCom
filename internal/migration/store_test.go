@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
+	"github.com/jackc/pgx/v5"
 )
 
 // go test ./internal/migration -run '^TestCreateDraft$' -v -count=1
@@ -74,20 +75,29 @@ func TestCreateDraft(t *testing.T) {
 
 		// mastiin data kesimpen
 
-		var saved bool
-		err = pool.QueryRow(ctx, `SELECT EXISTS (
-			    SELECT 1 FROM migrations
-			    WHERE id = $1 AND database_id = $2 AND title = $3 AND sql = $4
-			    	AND status = 'draft' AND created_by = 7 AND created_at IS NOT NULL
-			      	AND version IS NULL AND executed_by IS NULL
-			      	AND start_time IS NULL AND finish_time IS NULL AND error_message IS NULL
-			)`, m.ID, databaseID, title, sqlText).Scan(&saved)
+		saved, err := store.GetByID(ctx, m.ID)
 		if err != nil {
-			t.Fatalf("gagal membaca draft: %v", err)
+			t.Fatalf("gagal mengambil draft: %v", err)
 		}
 
-		if !saved {
-			t.Fatal("isi draft yang tersimpan tidak sesuai")
+		if saved == nil {
+			t.Fatal("draft yang sudah disimpan tidak ditemukan")
+		}
+
+		if saved.ID != m.ID || saved.DatabaseID != databaseID ||
+			saved.Title != title || saved.SQL != sqlText ||
+			saved.Status != S_Draft || saved.CreatedBy != 7 {
+			t.Error("data draft yang dibaca tidak sesuai")
+		}
+
+		if !saved.CreatedAt.Equal(m.CreatedAt) {
+			t.Error("waktu pembuatan draft tidak sesuai")
+		}
+
+		if saved.Version != nil || saved.ExecutedBy != nil ||
+			saved.StartTime != nil || saved.FinishTime != nil ||
+			saved.ErrorMessage != nil {
+			t.Error("draft belum seharusnya memiliki informasi eksekusi")
 		}
 
 		var tableExists bool
@@ -97,6 +107,16 @@ func TestCreateDraft(t *testing.T) {
 		}
 		if tableExists {
 			t.Error("SQL draft sudah dijalankan; seharusnya hanya disimpan sebagai teks")
+		}
+	})
+
+	t.Run("migration_tidak_ditemukan", func(t *testing.T){
+		m, err := store.GetbyID(ctx, -999)
+		if !errors.Is(err, pgx.ErrNoRows) {
+			t.Fatalf("seharusnya data gagal ditemukan")
+		}
+		if m != nil {
+			t.Error("migration harus nil jika ID tidak ditemukan")
 		}
 	})
 

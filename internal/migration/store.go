@@ -34,3 +34,25 @@ func (s *Store) CreateDraft(ctx context.Context, databaseID int, title string, s
 
 	return m, nil
 }
+
+func (s *Store) GetByID(ctx context.Context, id int) (*Migration, error) {
+	m := &Migration{}
+
+	query := `
+		SELECT
+			id, database_id, version, title, sql, status,
+			created_by, executed_by, created_at, updated_at,
+			start_time, finish_time, error_message
+		FROM migrations
+		WHERE id = $1
+	`
+
+	err := s.pool.QueryRow(ctx, query, id).Scan(&m.ID, &m.DatabaseID, &m.Version, &m.Title, &m.SQL, &m.Status,
+		&m.CreatedBy, &m.ExecutedBy, &m.CreatedAt, &m.UpdatedAt, &m.StartTime, &m.FinishTime, &m.ErrorMessage, )
+	
+	if err != nil {
+		return nil, fmt.Errorf("gagal mengambil migration: %w", err)
+	}
+
+	return m, nil
+}
