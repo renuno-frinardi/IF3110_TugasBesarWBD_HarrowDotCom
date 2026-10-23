@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
+	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/store"
 )
 
 func main() {
@@ -18,7 +19,7 @@ func main() {
 
 	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
-		log.Fatal("DATABASE_URL is not set; create .env in the project root or set DATABASE_URL in the environment")
+		log.Fatal("DATABASE_URL is not set, create .env in the project root or set DATABASE_URL in the environment")
 	}
 
 	connectionCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -32,6 +33,10 @@ func main() {
 
 	if err := pool.Ping(connectionCtx); err != nil {
 		log.Fatalf("Failed to connect to PostgreSQL: %v", err)
+	}
+
+	if err := store.RunMigrations(connectionCtx, pool); err != nil {
+		log.Fatalf("Failed to run migrations: %v", err)
 	}
 
 	fmt.Println("Database connection successful")
