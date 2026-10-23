@@ -6,9 +6,9 @@ CREATE TABLE users (
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT users_username_not_blank CHECK (BTRIM(username) <> ''),
-    CONSTRAINT users_email_not_blank CHECK (email IS NULL OR BTRIM(email) <> ''),
-    CONSTRAINT users_password_hash_not_blank CHECK (BTRIM(password_hash) <> '')
+    CONSTRAINT users_username_length CHECK (CHAR_LENGTH(BTRIM(username)) BETWEEN 1 AND 50),
+    CONSTRAINT users_email_length CHECK (email IS NULL OR CHAR_LENGTH(BTRIM(email)) BETWEEN 1 AND 254),
+    CONSTRAINT users_password_hash_length CHECK (CHAR_LENGTH(password_hash) BETWEEN 1 AND 255)
 );
 
 CREATE UNIQUE INDEX users_username_key ON users (LOWER(username));
@@ -20,7 +20,7 @@ CREATE TABLE roles (
     description TEXT NOT NULL DEFAULT '',
     is_system BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT roles_name_not_blank CHECK (BTRIM(name) <> '')
+    CONSTRAINT roles_name_length CHECK (CHAR_LENGTH(BTRIM(name)) BETWEEN 1 AND 100)
 );
 
 CREATE UNIQUE INDEX roles_name_key ON roles (LOWER(name));
@@ -30,7 +30,7 @@ CREATE TABLE permissions (
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT permissions_name_not_blank CHECK (BTRIM(name) <> '')
+    CONSTRAINT permissions_name_length CHECK (CHAR_LENGTH(BTRIM(name)) BETWEEN 1 AND 100)
 );
 
 CREATE UNIQUE INDEX permissions_name_key ON permissions (LOWER(name));
@@ -91,15 +91,13 @@ CREATE TABLE database_connections (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT database_connections_name_key UNIQUE (name),
-    CONSTRAINT database_connections_name_not_blank CHECK (BTRIM(name) <> ''),
-    CONSTRAINT database_connections_host_not_blank CHECK (BTRIM(host) <> ''),
-    CONSTRAINT database_connections_database_name_not_blank CHECK (BTRIM(database_name) <> ''),
-    CONSTRAINT database_connections_username_not_blank CHECK (BTRIM(username) <> ''),
+    CONSTRAINT database_connections_name_length CHECK (CHAR_LENGTH(BTRIM(name)) BETWEEN 1 AND 100),
+    CONSTRAINT database_connections_host_length CHECK (CHAR_LENGTH(BTRIM(host)) BETWEEN 1 AND 255),
+    CONSTRAINT database_connections_database_name_length CHECK (OCTET_LENGTH(BTRIM(database_name)) BETWEEN 1 AND 63),
+    CONSTRAINT database_connections_username_length CHECK (OCTET_LENGTH(BTRIM(username)) BETWEEN 1 AND 63),
     CONSTRAINT database_connections_db_type CHECK (db_type IN ('postgresql', 'mysql', 'mariadb')),
-    CONSTRAINT database_connections_ssl_mode
-        CHECK (ssl_mode IN ('disable', 'allow', 'prefer', 'require', 'verify-ca', 'verify-full')),
-    CONSTRAINT database_connections_password_ciphertext_not_empty
-        CHECK (OCTET_LENGTH(password_ciphertext) > 0)
+    CONSTRAINT database_connections_ssl_mode CHECK (ssl_mode IN ('disable', 'allow', 'prefer', 'require', 'verify-ca', 'verify-full')),
+    CONSTRAINT database_connections_password_ciphertext_not_empty CHECK (OCTET_LENGTH(password_ciphertext) > 0)
 );
 
 CREATE INDEX database_connections_updated_at_idx ON database_connections (updated_at DESC);
@@ -111,7 +109,7 @@ CREATE TABLE user_groups (
     created_by BIGINT REFERENCES users (id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT user_groups_name_not_blank CHECK (BTRIM(name) <> '')
+    CONSTRAINT user_groups_name_length CHECK (CHAR_LENGTH(BTRIM(name)) BETWEEN 1 AND 100)
 );
 
 CREATE UNIQUE INDEX user_groups_name_key ON user_groups (LOWER(name));
@@ -134,8 +132,7 @@ CREATE TABLE group_database_access (
     granted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (group_id, database_connection_id),
-    CONSTRAINT group_database_access_level_check
-        CHECK (access_level IN ('view_only', 'view_edit'))
+    CONSTRAINT group_database_access_level CHECK (access_level IN ('view_only', 'view_edit'))
 );
 
 CREATE INDEX group_database_access_connection_id_idx
@@ -177,10 +174,8 @@ CREATE TABLE sessions (
     CONSTRAINT sessions_csrf_token_hash_not_empty CHECK (OCTET_LENGTH(csrf_token_hash) > 0),
     CONSTRAINT sessions_idle_before_absolute CHECK (idle_expires_at <= absolute_expires_at),
     CONSTRAINT sessions_absolute_after_created CHECK (absolute_expires_at > created_at),
-    CONSTRAINT sessions_grace_only_when_rotated
-        CHECK (grace_expires_at IS NULL OR rotated_at IS NOT NULL),
-    CONSTRAINT sessions_grace_after_rotation
-        CHECK (grace_expires_at IS NULL OR grace_expires_at > rotated_at)
+    CONSTRAINT sessions_grace_only_when_rotated CHECK (grace_expires_at IS NULL OR rotated_at IS NOT NULL),
+    CONSTRAINT sessions_grace_after_rotation CHECK (grace_expires_at IS NULL OR grace_expires_at > rotated_at)
 );
 
 CREATE INDEX sessions_user_id_idx ON sessions (user_id);
