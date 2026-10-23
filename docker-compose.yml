@@ -36,5 +36,5 @@ services:
   #     retries: 20
 
 volumes:
-  postgres_data:
+  tubes_wbd:
   # mariadb_data:
