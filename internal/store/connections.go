@@ -16,6 +16,7 @@ import (
 
 type DatabaseConnection struct {
 	ID           int64
+	Source       string
 	Name         string
 	Host         string
 	Port         int
@@ -113,12 +114,12 @@ func PostgresTargetConfig(connection DatabaseConnection, encryptedPassword []byt
 	return config, nil
 }
 
-func ListDatabaseConnections(ctx context.Context, pool *pgxpool.Pool) ([]DatabaseConnection, error) {
-	rows, err := pool.Query(ctx, `
+func ListDatabaseConnections(ctx context.Context, pool *DB) ([]DatabaseConnection, error) {
+	rows, err := pool.DB.QueryContext(ctx, pool.Rebind(`
 		SELECT id, name, host, port, database_name, username, db_type, ssl_mode, is_active, created_at, updated_at
 		FROM database_connections
 		ORDER BY updated_at DESC, id DESC
-	`)
+	`))
 	if err != nil {
 		return nil, fmt.Errorf("List database connections: %w", err)
 	}
@@ -150,7 +151,7 @@ func ListDatabaseConnections(ctx context.Context, pool *pgxpool.Pool) ([]Databas
 	return connections, nil
 }
 
-func CountRecords(ctx context.Context, pool *pgxpool.Pool, table string) (int, error) {
+func CountRecords(ctx context.Context, pool *DB, table string) (int, error) {
 	var count int
 	switch table {
 	case "users", "user_groups", "database_connections", "audit_logs":
@@ -158,18 +159,18 @@ func CountRecords(ctx context.Context, pool *pgxpool.Pool, table string) (int, e
 		return 0, fmt.Errorf("Unsupported count table %q", table)
 	}
 
-	if err := pool.QueryRow(ctx, "SELECT COUNT(*) FROM "+table).Scan(&count); err != nil {
+	if err := pool.DB.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+table).Scan(&count); err != nil {
 		return 0, fmt.Errorf("Count %s: %w", table, err)
 	}
 
 	return count, nil
 }
 
-func CreateDatabaseConnection(ctx context.Context, pool *pgxpool.Pool, input CreateDatabaseConnectionInput) error {
-	_, err := pool.Exec(ctx, `
+func CreateDatabaseConnection(ctx context.Context, pool *DB, input CreateDatabaseConnectionInput) error {
+	_, err := pool.DB.ExecContext(ctx, pool.Rebind(`
 		INSERT INTO database_connections (name, host, port, database_name, username, password_ciphertext, db_type, ssl_mode)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-	`, input.Name, input.Host, input.Port, input.DatabaseName, input.Username,
+	`), input.Name, input.Host, input.Port, input.DatabaseName, input.Username,
 		input.Password, input.DBType, input.SSLMode)
 
 	if err != nil {
@@ -179,14 +180,14 @@ func CreateDatabaseConnection(ctx context.Context, pool *pgxpool.Pool, input Cre
 	return nil
 }
 
-func GetDatabaseConnection(ctx context.Context, pool *pgxpool.Pool, id int64) (DatabaseConnection, error) {
+func GetDatabaseConnection(ctx context.Context, pool *DB, id int64) (DatabaseConnection, error) {
 	var connection DatabaseConnection
-	err := pool.QueryRow(ctx, `
+	err := pool.DB.QueryRowContext(ctx, pool.Rebind(`
 		SELECT id, name, host, port, database_name, username, db_type, ssl_mode,
 		       is_active, created_at, updated_at
 		FROM database_connections
 		WHERE id = $1
-	`, id).Scan(
+	`), id).Scan(
 		&connection.ID,
 		&connection.Name,
 		&connection.Host,
@@ -205,32 +206,42 @@ func GetDatabaseConnection(ctx context.Context, pool *pgxpool.Pool, id int64) (D
 	return connection, nil
 }
 
-func DeleteDatabaseConnection(ctx context.Context, pool *pgxpool.Pool, id int64) error {
-	result, err := pool.Exec(ctx, "DELETE FROM database_connections WHERE id = $1", id)
+func DeleteDatabaseConnection(ctx context.Context, pool *DB, id int64) error {
+	result, err := pool.DB.ExecContext(ctx, pool.Rebind("DELETE FROM database_connections WHERE id = $1"), id)
 	if err != nil {
 		return fmt.Errorf("Delete database connection: %w", err)
 	}
 
-	if result.RowsAffected() == 0 {
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("Check deleted database connection: %w", err)
+	}
+
+	if rowsAffected == 0 {
 		return fmt.Errorf("Database connection %d not found", id)
 	}
 	return nil
 }
 
-func UpdateDatabaseConnection(ctx context.Context, pool *pgxpool.Pool, id int64, input CreateDatabaseConnectionInput) error {
-	result, err := pool.Exec(ctx, `
+func UpdateDatabaseConnection(ctx context.Context, pool *DB, id int64, input CreateDatabaseConnectionInput) error {
+	result, err := pool.DB.ExecContext(ctx, pool.Rebind(`
 		UPDATE database_connections
 		SET name = $1, host = $2, port = $3, database_name = $4, username = $5,
 		    password_ciphertext = COALESCE($6, password_ciphertext),
 		    db_type = $7, ssl_mode = $8
 		WHERE id = $9
-	`, input.Name, input.Host, input.Port, input.DatabaseName, input.Username,
+	`), input.Name, input.Host, input.Port, input.DatabaseName, input.Username,
 		input.Password, input.DBType, input.SSLMode, id)
 	if err != nil {
 		return fmt.Errorf("Update database connection: %w", err)
 	}
 
-	if result.RowsAffected() == 0 {
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("Check updated database connection: %w", err)
+	}
+
+	if rowsAffected == 0 {
 		return fmt.Errorf("Database connection %d not found", id)
 	}
 	return nil
