@@ -1,0 +1,66 @@
+{{define "content"}}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Overview</p>
+    <h1>Good afternoon, Admin.</h1>
+    <p class="muted">Monitor your database workspace from one place.</p>
+  </div>
+  <a class="button primary" href="/connections/new"
+    >Add connection <span>＋</span></a
+  >
+</section>
+<section class="stats">
+  <div class="stat-card">
+    <span class="stat-label">Database connections</span
+    ><strong>{{.Stats.Connections}}</strong
+    ><span class="stat-note">Registered targets</span>
+  </div>
+  <div class="stat-card">
+    <span class="stat-label">Platform users</span
+    ><strong>{{.Stats.Users}}</strong
+    ><span class="stat-note">Active workspace users</span>
+  </div>
+  <div class="stat-card">
+    <span class="stat-label">Groups</span><strong>{{.Stats.Groups}}</strong
+    ><span class="stat-note">Access groups</span>
+  </div>
+  <div class="stat-card">
+    <span class="stat-label">Audit events</span
+    ><strong>{{.Stats.AuditLogs}}</strong
+    ><span class="stat-note">Recorded activities</span>
+  </div>
+</section>
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <p class="eyebrow">Quick access</p>
+      <h2>Database connections</h2>
+    </div>
+    <a class="text-link" href="/connections">View all →</a>
+  </div>
+  {{if .Connections}}
+  <div class="connection-grid">
+    {{range .Connections}}
+    <a class="connection-card" href="/connections">
+      <div class="connection-icon">
+        {{if eq .DBType "postgresql"}}PG{{else}}DB{{end}}
+      </div>
+      <div>
+        <h3>{{.Name}}</h3>
+        <p>{{.Host}}:{{.Port}} · {{.DatabaseName}}</p>
+      </div>
+      <span class="badge {{if .IsActive}}green{{else}}gray{{end}}"
+        >{{if .IsActive}}Active{{else}}Inactive{{end}}</span
+      >
+    </a>
+    {{end}}
+  </div>
+  {{else}}
+  <div class="empty">
+    <strong>No connections yet</strong>
+    <p>Add your first database connection to get started.</p>
+    <a class="button secondary" href="/connections/new">Add connection</a>
+  </div>
+  {{end}}
+</section>
+{{end}}

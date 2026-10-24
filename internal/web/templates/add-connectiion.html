@@ -1,0 +1,77 @@
+{{define "content"}}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Workspace / Connections / New</p>
+    <h1>Add database connection</h1>
+    <p class="muted">
+      Store a secure connection profile for a target database.
+    </p>
+  </div>
+</section>
+<section class="panel form-panel">
+  <form method="post" action="/connections/new">
+    <div class="form-section">
+      <h2>Connection details</h2>
+      <p class="muted">These details identify the database in Harrow.</p>
+    </div>
+    <div class="form-grid">
+      <label
+        >Connection name<input
+          name="name"
+          required
+          maxlength="100"
+          placeholder="Production database" /></label
+      ><label
+        >Database type<select name="db_type">
+          <option value="postgresql">PostgreSQL</option>
+          <!-- <option value="mysql">MySQL</option>
+          <option value="mariadb">MariaDB</option> -->
+        </select></label
+      ><label
+        >Host<input
+          name="host"
+          required
+          maxlength="255"
+          placeholder="db.example.com" /></label
+      ><label
+        >Port<input
+          name="port"
+          type="number"
+          min="1"
+          max="65535"
+          value="5432"
+          required /></label
+      ><label
+        >Database name<input
+          name="database_name"
+          required
+          maxlength="63"
+          placeholder="application_db" /></label
+      ><label
+        >Username<input
+          name="username"
+          required
+          maxlength="63"
+          placeholder="harrow_reader" /></label
+      ><label
+        >Password<input
+          name="password"
+          type="password"
+          required
+          autocomplete="new-password" /></label
+      ><label
+        >SSL mode<select name="ssl_mode">
+          <option value="prefer">Prefer</option>
+          <option value="require">Require</option>
+          <option value="verify-full">Verify full</option>
+          <option value="disable">Disable</option>
+        </select></label
+      >
+    </div>
+    <div class="form-actions">
+      <a class="button secondary" href="/connections">Cancel</a
+      ><button class="button primary" type="submit">Save connection</button>
+    </div>
+  </form>
+</section>
+{{end}}

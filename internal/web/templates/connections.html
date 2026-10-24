@@ -1,0 +1,60 @@
+{{define "content"}}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Workspace / Connections</p>
+    <h1>Database connections</h1>
+    <p class="muted">Manage the databases connected to your workspace.</p>
+  </div>
+  <a class="button primary" href="/connections/new"
+    >Add connection <span>＋</span></a
+  >
+</section>
+<section class="panel">
+  <div class="toolbar">
+    <div class="search-placeholder">⌕&nbsp; Search connections</div>
+    <button class="button secondary" type="button">Filter</button>
+  </div>
+  {{if .Connections}}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Host</th>
+          <th>Database</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Connections}}
+        <tr>
+          <td><strong>{{.Name}}</strong><small>{{.Username}}</small></td>
+          <td>{{.DBType}}</td>
+          <td>{{.Host}}:{{.Port}}</td>
+          <td>{{.DatabaseName}}</td>
+          <td>
+            <span class="badge {{if .IsActive}}green{{else}}gray{{end}}"
+              >{{if .IsActive}}Active{{else}}Inactive{{end}}</span
+            >
+          </td>
+          <td>
+            <button class="icon-button" type="button" aria-label="More actions">
+              •••
+            </button>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{else}}
+  <div class="empty">
+    <strong>No connections found</strong>
+    <p>There are no database connections in this workspace.</p>
+    <a class="button primary" href="/connections/new">Add connection</a>
+  </div>
+  {{end}}
+</section>
+{{end}}
