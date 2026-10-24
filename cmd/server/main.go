@@ -104,7 +104,7 @@ func dashboardHandler(pool *pgxpool.Pool) http.HandlerFunc {
 			render(w, "dashboard", pageData{Title: "Dashboard", Active: "dashboard", Error: err.Error()})
 			return
 		}
-		
+
 		stats.AuditLogs, err = store.CountRecords(r.Context(), pool, "audit_logs")
 		if err != nil {
 			render(w, "dashboard", pageData{Title: "Dashboard", Active: "dashboard", Error: err.Error()})
@@ -140,7 +140,7 @@ func newConnectionHandler(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		data := pageData{Title: "Add connection", Active: "connections"}
 		if r.Method == http.MethodGet {
-			render(w, "connection_new", data)
+			render(w, "add-connection", data)
 			return
 		}
 
@@ -150,14 +150,14 @@ func newConnectionHandler(pool *pgxpool.Pool) http.HandlerFunc {
 		}
 		if err := r.ParseForm(); err != nil {
 			data.Error = "Invalid form submission."
-			render(w, "connection_new", data)
+			render(w, "add-connection", data)
 			return
 		}
 
 		port, err := strconv.Atoi(r.FormValue("port"))
 		if err != nil {
 			data.Error = "Port must be a number."
-			render(w, "connection_new", data)
+			render(w, "add-connection", data)
 			return
 		}
 
@@ -169,20 +169,20 @@ func newConnectionHandler(pool *pgxpool.Pool) http.HandlerFunc {
 
 		if strings.TrimSpace(input.Name) == "" || strings.TrimSpace(input.Host) == "" {
 			data.Error = "Connection name and host are required"
-			render(w, "connection_new", data)
+			render(w, "add-connection", data)
 			return
 		}
 
 		input.Password, err = store.EncryptSecret(r.FormValue("password"), os.Getenv("ENCRYPTION_KEY"))
 		if err != nil {
 			data.Error = "Connection encryption is not configured correctly"
-			render(w, "connection_new", data)
+			render(w, "add-connection", data)
 			return
 		}
 
 		if err := store.CreateDatabaseConnection(r.Context(), pool, input); err != nil {
 			data.Error = "Unable to save connection, check that the name is unique"
-			render(w, "connection_new", data)
+			render(w, "add-connection", data)
 			return
 		}
 
