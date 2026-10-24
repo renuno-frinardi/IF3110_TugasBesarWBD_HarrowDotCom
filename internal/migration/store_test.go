@@ -19,6 +19,7 @@ import (
 // test 2 : menolak penyimpanan untuk ID database yang ga terdaftar
 // test 3 : nanganin context yang sudah dibatalkan.
 // test 4 : mengambil daftar migration dari db
+// test 5 : update bukan draft
 
 func TestCreateDraft(t *testing.T) {
 	pool := openTestDatabase(t)
@@ -263,6 +264,58 @@ func TestCreateDraft(t *testing.T) {
 			saved.CreatedBy != draft.CreatedBy ||
 			!saved.CreatedAt.Equal(draft.CreatedAt) {
 			t.Error("status atau informasi pembuatan ikut berubah")
+		}
+	})
+
+	t.Run("menolak_update_bukan_draft", func(t *testing.T) {
+		list, err := store.GetByDatabase(ctx, databaseID)
+		if err != nil {
+			t.Fatalf("gagal mengambil draft: %v", err)
+		}
+		if len(list) != 1 {
+			t.Fatal("seharusnya tersedia satu draft untuk diubah")
+		}
+		draft := list[0]
+
+		for _, status := range []string{S_Running, S_Executed, S_Failed} {
+			_, err := pool.Exec(ctx, "UPDATE migrations SET status = $1 WHERE id = $2", status, draft.ID)
+
+			if err != nil {
+				t.Fatalf("gagal mengubah status draft menjadi %s: %v", status, err)
+			}
+
+			m, err := store.Update(ctx, draft.ID, "Tidak boleh berubah", "SELECT 3;")
+
+			if !errors.Is(err, pgx.ErrNoRows) {
+				t.Fatalf("seharusnya update ditolak: %v", err)
+			}
+			if m != nil {
+				t.Fatal("migration harus nil ketika update ditolak")
+			}
+
+			// Mastiin data ga berubah
+			saved, err := store.GetByID(ctx, draft.ID)
+			if err != nil {
+				t.Fatalf("gagal membaca draft: %v", err)
+			}
+			if saved == nil {
+				t.Fatal("draft tidak ditemukan")
+			}
+
+			if saved.Title != draft.Title || saved.SQL != draft.SQL || saved.Status != status {
+				t.Error("judul atau SQL ikut berubah padahal update ditolak")
+			}
+		}
+	})
+	t.Run("update_id_tidak_ditemukan", func(t *testing.T) {
+		m, err := store.Update(ctx, -999, "Tidak ditemukan", "SELECT 1;")
+
+		if !errors.Is(err, pgx.ErrNoRows) {
+			t.Fatalf("seharusnya ID tidak ditemukan, mendapat: %v", err)
+		}
+
+		if m != nil {
+			t.Error("hasil update harus nil jika ID tidak ditemukan")
 		}
 	})
 
