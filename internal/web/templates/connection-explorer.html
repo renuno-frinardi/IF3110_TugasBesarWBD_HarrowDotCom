@@ -7,7 +7,7 @@
       Browse schemas and table data
     </p>
   </div>
-  <a class="button secondary" href="/connections/view?id={{.Connection.ID}}"
+  <a class="button secondary" href="/connections/view?id={{.Connection.ID}}&source={{.Connection.Source}}"
     >Back to details</a
   >
 </section>
@@ -18,7 +18,7 @@
     {{range .Explorer.Schemas}}
     <a
       class="explorer-item {{if eq $.Explorer.SelectedSchema .}}selected{{end}}"
-      href="/connections/explore?id={{$.Connection.ID}}&schema={{.}}"
+      href="/connections/explore?id={{$.Connection.ID}}&source={{$.Connection.Source}}&schema={{.}}"
       >{{.}}</a
     >
     {{end}}
@@ -26,7 +26,7 @@
     {{range .Explorer.Tables}}
     <a
       class="explorer-item {{if eq $.Explorer.SelectedTable .}}selected{{end}}"
-      href="/connections/explore?id={{$.Connection.ID}}&schema={{$.Explorer.SelectedSchema}}&table={{.}}"
+      href="/connections/explore?id={{$.Connection.ID}}&source={{$.Connection.Source}}&schema={{$.Explorer.SelectedSchema}}&table={{.}}"
       >{{.}}</a
     >
     {{else}}
@@ -70,13 +70,13 @@
     <div class="pagination">
       {{if gt .Explorer.Page 1}}<a
         class="button secondary"
-        href="/connections/explore?id={{.Connection.ID}}&schema={{.Explorer.SelectedSchema}}&table={{.Explorer.SelectedTable}}&page={{subtract .Explorer.Page 1}}"
+        href="/connections/explore?id={{.Connection.ID}}&source={{.Connection.Source}}&schema={{.Explorer.SelectedSchema}}&table={{.Explorer.SelectedTable}}&page={{subtract .Explorer.Page 1}}"
         >Previous</a
       >{{end}}
       <span>Page {{.Explorer.Page}}</span>
       {{if .Explorer.HasNextPage}}<a
         class="button secondary"
-        href="/connections/explore?id={{.Connection.ID}}&schema={{.Explorer.SelectedSchema}}&table={{.Explorer.SelectedTable}}&page={{add .Explorer.Page 1}}"
+        href="/connections/explore?id={{.Connection.ID}}&source={{.Connection.Source}}&schema={{.Explorer.SelectedSchema}}&table={{.Explorer.SelectedTable}}&page={{add .Explorer.Page 1}}"
         >Next</a
       >{{end}}
     </div>

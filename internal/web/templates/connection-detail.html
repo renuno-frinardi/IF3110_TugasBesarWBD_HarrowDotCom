@@ -35,10 +35,10 @@
     </div>
   </div>
   <div class="form-actions">
-    <a class="button primary" href="/connections/explore?id={{.Connection.ID}}"
+    <a class="button primary" href="/connections/explore?id={{.Connection.ID}}&source={{.Connection.Source}}"
       >Explore data</a
     >
-    <a class="button secondary" href="/connections/edit?id={{.Connection.ID}}"
+    <a class="button secondary" href="/connections/edit?id={{.Connection.ID}}&source={{.Connection.Source}}"
       >Edit connection</a
     >
     <form
@@ -47,6 +47,7 @@
       onsubmit="return confirm('Delete this connection?');"
     >
       <input type="hidden" name="id" value="{{.Connection.ID}}" />
+      <input type="hidden" name="source" value="{{.Connection.Source}}" />
       <button class="button danger" type="submit">Delete connection</button>
     </form>
   </div>
