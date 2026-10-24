@@ -93,10 +93,24 @@ func dashboardHandler(pool *pgxpool.Pool) http.HandlerFunc {
 		}
 
 		stats := dashboardStats{Connections: len(connections)}
-		stats.Users, _ = store.CountRecords(r.Context(), pool, "users")
-		stats.Groups, _ = store.CountRecords(r.Context(), pool, "user_groups")
-		stats.AuditLogs, _ = store.CountRecords(r.Context(), pool, "audit_logs")
+		stats.Users, err = store.CountRecords(r.Context(), pool, "users")
+		if err != nil {
+			render(w, "dashboard", pageData{Title: "Dashboard", Active: "dashboard", Error: err.Error()})
+			return
+		}
+
+		stats.Groups, err = store.CountRecords(r.Context(), pool, "user_groups")
+		if err != nil {
+			render(w, "dashboard", pageData{Title: "Dashboard", Active: "dashboard", Error: err.Error()})
+			return
+		}
 		
+		stats.AuditLogs, err = store.CountRecords(r.Context(), pool, "audit_logs")
+		if err != nil {
+			render(w, "dashboard", pageData{Title: "Dashboard", Active: "dashboard", Error: err.Error()})
+			return
+		}
+
 		if len(connections) > 4 {
 			connections = connections[:4]
 		}
@@ -147,21 +161,21 @@ func newConnectionHandler(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		password, err := store.EncryptSecret(r.FormValue("password"), os.Getenv("ENCRYPTION_KEY"))
-		if err != nil {
-			data.Error = "Connection encryption is not configured correctly"
-			render(w, "connection_new", data)
-			return
-		}
-
 		input := store.CreateDatabaseConnectionInput{
 			Name: r.FormValue("name"), Host: r.FormValue("host"), Port: port,
 			DatabaseName: r.FormValue("database_name"), Username: r.FormValue("username"),
-			Password: password, DBType: r.FormValue("db_type"), SSLMode: r.FormValue("ssl_mode"),
+			DBType: r.FormValue("db_type"), SSLMode: r.FormValue("ssl_mode"),
 		}
 
 		if strings.TrimSpace(input.Name) == "" || strings.TrimSpace(input.Host) == "" {
 			data.Error = "Connection name and host are required"
+			render(w, "connection_new", data)
+			return
+		}
+
+		input.Password, err = store.EncryptSecret(r.FormValue("password"), os.Getenv("ENCRYPTION_KEY"))
+		if err != nil {
+			data.Error = "Connection encryption is not configured correctly"
 			render(w, "connection_new", data)
 			return
 		}
@@ -188,7 +202,7 @@ func render(w http.ResponseWriter, page string, data pageData) {
 		http.Error(w, fmt.Sprintf("Template error: %v", err), http.StatusInternalServerError)
 		return
 	}
-	
+
 	if err := tmpl.ExecuteTemplate(w, "base", data); err != nil {
 		log.Printf("Render %s: %v", page, err)
 	}
