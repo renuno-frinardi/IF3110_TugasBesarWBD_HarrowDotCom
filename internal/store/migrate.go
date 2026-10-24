@@ -13,9 +13,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+//go:embed migrations/*.up.sql
 var migrationsFS embed.FS
 
-// migrasi db dengan menggunakan file SQL yang ada di migrations
+// RunMigrations applies all migration that has not been recorded yet
 func RunMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 	if pool == nil {
 		return fmt.Errorf("Migration pool is nil")
@@ -34,8 +35,12 @@ func RunMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 	if err != nil {
 		return fmt.Errorf("List migrations: %w", err)
 	}
-	sort.Strings(entries)
 
+	if len(entries) == 0 {
+		return fmt.Errorf("No migration files found")
+	}
+
+	sort.Strings(entries)
 	for _, filename := range entries {
 		version, err := migrationVersion(filename)
 		if err != nil {
