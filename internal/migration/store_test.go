@@ -9,15 +9,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
-	"github.com/jackc/pgx/v5"
 )
 
 // go test ./internal/migration -run '^TestCreateDraft$' -v -count=1
 // test 1 : nyimpen draft dengan data yang sesuai
 // test 2 : menolak penyimpanan untuk ID database yang ga terdaftar
 // test 3 : nanganin context yang sudah dibatalkan.
+// test 4 : mengambil daftar migration dari db
 
 func TestCreateDraft(t *testing.T) {
 	pool := openTestDatabase(t)
@@ -27,7 +28,7 @@ func TestCreateDraft(t *testing.T) {
 
 	name := fmt.Sprintf("store_test_%d", time.Now().UnixNano())
 	var databaseID int
-	err := pool.QueryRow(ctx, `INSERT INTO database_connections (name, host, port, database_name, username, hash_password) VALUES ($1, 'localhost', 5432, 'test_target', 'test_user', 'test-only-placeholder') RETURNING id`, name).Scan(&databaseID)
+	err := pool.QueryRow(ctx, `INSERT INTO database_connections (name, host, port, database_name, username, password_ciphertext) VALUES ($1, 'localhost', 5432, 'test_target', 'test_user', $2) RETURNING id`, name, []byte("dummy")).Scan(&databaseID)
 	if err != nil {
 		t.Fatalf("gagal membuat data koneksi test: %v", err)
 	}
@@ -110,8 +111,8 @@ func TestCreateDraft(t *testing.T) {
 		}
 	})
 
-	t.Run("migration_tidak_ditemukan", func(t *testing.T){
-		m, err := store.GetbyID(ctx, -999)
+	t.Run("migration_tidak_ditemukan", func(t *testing.T) {
+		m, err := store.GetByID(ctx, -999)
 		if !errors.Is(err, pgx.ErrNoRows) {
 			t.Fatalf("seharusnya data gagal ditemukan")
 		}
@@ -138,6 +139,85 @@ func TestCreateDraft(t *testing.T) {
 		m, err := store.CreateDraft(canceledCtx, databaseID, "Canceled draft", "SELECT 1;", 7)
 		if !errors.Is(err, context.Canceled) || m != nil {
 			t.Fatalf("mengharapkan migration nil dan context.Canceled, mendapat: %v", err)
+		}
+	})
+
+	t.Run("daftar_migration_per_database", func(t *testing.T) {
+		// buat koneksi kedua buat cek migration.
+		var otherDatabaseID int
+		err := pool.QueryRow(ctx, `
+			INSERT INTO database_connections (
+				name, host, port, database_name, username, password_ciphertext
+			)
+			VALUES ($1, 'localhost', 5432, 'other_target', 'test_user', $2)
+			RETURNING id
+		`, name+"_other", []byte("dummy")).Scan(&otherDatabaseID)
+
+		if err != nil {
+			t.Fatalf("gagal membuat koneksi kedua: %v", err)
+		}
+
+		t.Cleanup(func() {
+			cleanupCtx, cleanupCancel := context.WithTimeout(
+				context.Background(), 10*time.Second,
+			)
+			defer cleanupCancel()
+
+			for _, query := range []string{
+				"DELETE FROM migrations WHERE database_id = $1",
+				"DELETE FROM database_connections WHERE id = $1",
+			} {
+				if _, err := pool.Exec(cleanupCtx, query, otherDatabaseID); err != nil {
+					t.Errorf("gagal membersihkan data test: %v", err)
+				}
+			}
+		})
+
+		// Database kedua belum memiliki migration.
+		emptyList, err := store.GetByDatabase(ctx, otherDatabaseID)
+		if err != nil {
+			t.Fatalf("gagal mengambil daftar kosong: %v", err)
+		}
+		if len(emptyList) != 0 {
+			t.Fatal("database kedua seharusnya belum memiliki migration")
+		}
+
+		// nyimpen draft di db 2.
+		otherDraft, err := store.CreateDraft(
+			ctx, otherDatabaseID, "Draft kedua", "SELECT 2;", 7,
+		)
+		if err != nil {
+			t.Fatalf("gagal membuat draft kedua: %v", err)
+		}
+		if otherDraft == nil {
+			t.Fatal("draft kedua tidak tersedia")
+		}
+
+		list, err := store.GetByDatabase(ctx, databaseID)
+		if err != nil {
+			t.Fatalf("gagal mengambil daftar migration: %v", err)
+		}
+		if len(list) != 1 {
+			t.Fatalf("mengharapkan 1 migration, mendapat %d", len(list))
+		}
+
+		if list[0].DatabaseID != databaseID ||
+			list[0].Title != "test's draft "+name ||
+			list[0].Status != S_Draft {
+			t.Error("data migration database pertama tidak sesuai")
+		}
+
+		otherList, err := store.GetByDatabase(ctx, otherDatabaseID)
+		if err != nil {
+			t.Fatalf("gagal mengambil daftar database kedua: %v", err)
+		}
+		if len(otherList) != 1 {
+			t.Fatalf("mengharapkan 1 migration, mendapat %d", len(otherList))
+		}
+
+		if otherList[0].ID != otherDraft.ID ||
+			otherList[0].DatabaseID != otherDatabaseID {
+			t.Error("data migration database kedua tidak sesuai")
 		}
 	})
 
