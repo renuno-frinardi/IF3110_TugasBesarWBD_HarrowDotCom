@@ -58,12 +58,13 @@ func testMariaDBConnection(ctx context.Context, input CreateDatabaseConnectionIn
 	}
 
 	config := mysql.Config{
-		User:      input.Username,
-		Passwd:    string(input.Password),
-		Net:       "tcp",
-		Addr:      fmt.Sprintf("%s:%d", input.Host, input.Port),
-		DBName:    input.DatabaseName,
+		User: input.Username,
+		Passwd: string(input.Password),
+		Net: "tcp",
+		Addr: fmt.Sprintf("%s:%d", input.Host, input.Port),
+		DBName: input.DatabaseName,
 		TLSConfig: tlsConfig,
+		AllowNativePasswords: true,
 	}
 
 	db, err := sql.Open("mysql", config.FormatDSN())
