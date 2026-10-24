@@ -4,7 +4,9 @@ import (
 	"embed"
 	"html/template"
 	"io/fs"
+	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 //go:embed templates static
@@ -18,8 +20,17 @@ func templateFuncs() template.FuncMap {
 			}
 			return value.Local().Format("02 Jan 2006, 15:04")
 		},
-		"add": func(value, amount int) int { return value + amount },
+		"add":      func(value, amount int) int { return value + amount },
 		"subtract": func(value, amount int) int { return value - amount },
+		"initial": func(value string) string {
+			value = strings.TrimSpace(value)
+			if value == "" {
+				return "?"
+			}
+			
+			runeValue, _ := utf8.DecodeRuneInString(value)
+			return strings.ToUpper(string(runeValue))
+		},
 	}
 }
 

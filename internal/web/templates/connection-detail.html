@@ -11,7 +11,7 @@
 </section>
 <section class="panel detail-panel">
   <div class="detail-header">
-    <div class="connection-icon">{{.Connection.DBType}}</div>
+    <div class="connection-icon">{{initial .Connection.Name}}</div>
     <div>
       <h2>{{.Connection.Name}}</h2>
       <span class="badge {{if .Connection.IsActive}}green{{else}}gray{{end}}">
@@ -31,7 +31,7 @@
     <div><span>Username</span><strong>{{.Connection.Username}}</strong></div>
     <div><span>SSL mode</span><strong>{{.Connection.SSLMode}}</strong></div>
     <div>
-      <span>Last updated</span><strong>{{.Connection.UpdatedAt}}</strong>
+      <span>Last updated</span><strong>{{formatTime .Connection.UpdatedAt}}</strong>
     </div>
   </div>
   <div class="form-actions">

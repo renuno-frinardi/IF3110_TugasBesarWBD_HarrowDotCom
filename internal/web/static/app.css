@@ -281,6 +281,10 @@ body {
   font-weight: 800;
 }
 
+.detail-header .connection-icon {
+  font-size: 22px;
+}
+
 .badge {
   margin-left: auto;
   border-radius: 20px;
@@ -436,6 +440,124 @@ select:focus {
   padding-top: 20px;
 }
 
+.form-actions form {
+  display: flex;
+  margin: 0;
+}
+
+.form-actions .button {
+  box-sizing: border-box;
+  min-height: 42px;
+}
+
+.table-link {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.table-link:hover {
+  color: var(--green);
+}
+
+.detail-panel {
+  max-width: 850px;
+}
+
+.detail-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 22px;
+}
+
+.detail-header h2 {
+  margin: 0 0 8px;
+}
+
+.detail-header .badge {
+  margin-left: 0;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 22px;
+  padding: 26px 0;
+}
+
+.detail-grid span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 5px;
+}
+
+.detail-grid strong {
+  font-size: 14px;
+}
+
+.button.danger {
+  background: #fff0ef;
+  color: #a23932;
+}
+
+.explorer-layout {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 18px;
+}
+
+.explorer-sidebar {
+  align-self: start;
+  padding: 18px 12px;
+}
+
+.explorer-sidebar h2 {
+  margin: 0 8px 12px;
+  font-size: 15px;
+}
+
+.table-heading {
+  border-top: 1px solid var(--line);
+  margin-top: 18px !important;
+  padding-top: 18px;
+}
+
+.explorer-item {
+  display: block;
+  overflow: hidden;
+  border-radius: 6px;
+  color: var(--muted);
+  padding: 9px 10px;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.explorer-item:hover,
+.explorer-item.selected {
+  background: var(--pale);
+  color: var(--green);
+  font-weight: 700;
+}
+
+.explorer-content {
+  min-width: 0;
+}
+
+.explorer-content .panel-heading {
+  align-items: center;
+}
+
+.pagination {
+  align-items: center;
+  display: flex;
+  gap: 14px;
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+
 @media (max-width: 800px) {
   .sidebar {
     width: 190px;
@@ -449,7 +571,8 @@ select:focus {
     grid-template-columns: 1fr 1fr;
   }
   .connection-grid,
-  .form-grid {
+  .form-grid,
+  .explorer-layout {
     grid-template-columns: 1fr;
   }
 }
