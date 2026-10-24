@@ -1,0 +1,44 @@
+{{define "base"}}
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{.Title}} · Harrow</title>
+    <link rel="stylesheet" href="/static/app.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <a class="brand" href="/">harrow<span>.</span></a>
+        <p class="eyebrow">Database management</p>
+        <nav class="nav">
+          <a href="/"{{if eq .Active "dashboard"}} class="active"{{end}}>Dashboard</a>
+          <a href="/connections"{{if eq .Active "connections"}} class="active"{{end}}>Database connections</a>
+          <a href="/users"{{if eq .Active "users"}} class="active"{{end}}>Users</a>
+          <a href="/groups"{{if eq .Active "groups"}} class="active"{{end}}>Groups</a>
+          <a href="/access"{{if eq .Active "access"}} class="active"{{end}}>Access management</a>
+          <a href="/audit-logs"{{if eq .Active "audit"}} class="active"{{end}}>Audit logs</a>
+        </nav>
+        <div class="sidebar-footer">
+          <span class="status-dot"></span> System operational
+        </div>
+      </aside>
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Workspace</p>
+            <strong>Harrow Platform</strong>
+          </div>
+          <div class="avatar">AD</div>
+        </header>
+        {{if .Error}}
+        <div class="alert error">{{.Error}}</div>
+        {{end}} {{if .Success}}
+        <div class="alert success">{{.Success}}</div>
+        {{end}} {{template "content" .}}
+      </main>
+    </div>
+  </body>
+</html>
+{{end}}

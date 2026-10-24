@@ -1,0 +1,101 @@
+{{define "content"}}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Workspace / Connections / Explorer</p>
+    <h1>{{.Connection.Name}}</h1>
+    <p class="muted">
+      Browse schemas and table data
+    </p>
+  </div>
+  <a class="button secondary" href="/connections/view?id={{.Connection.ID}}&source={{.Connection.Source}}"
+    >Back to details</a
+  >
+</section>
+{{if .Explorer.Schemas}}
+<section class="explorer-layout">
+  <aside class="panel explorer-sidebar">
+    <h2>Schemas</h2>
+    {{range .Explorer.Schemas}}
+    <a
+      class="explorer-item {{if eq $.Explorer.SelectedSchema .}}selected{{end}}"
+      href="/connections/explore?id={{$.Connection.ID}}&source={{$.Connection.Source}}&schema={{.}}"
+      >{{.}}</a
+    >
+    {{end}}
+    <h2 class="table-heading">Tables</h2>
+    {{range .Explorer.Tables}}
+    <a
+      class="explorer-item {{if eq $.Explorer.SelectedTable .}}selected{{end}}"
+      href="/connections/explore?id={{$.Connection.ID}}&source={{$.Connection.Source}}&schema={{$.Explorer.SelectedSchema}}&table={{.}}"
+      >{{.}}</a
+    >
+    {{else}}
+    <p class="muted">No tables found.</p>
+    {{end}}
+  </aside>
+  <section class="panel explorer-content">
+    {{if .Explorer.SelectedTable}}
+    <div class="panel-heading">
+      <div>
+        <p class="eyebrow">{{.Explorer.SelectedSchema}}</p>
+        <h2>{{.Explorer.SelectedTable}}</h2>
+      </div>
+      <span class="badge green">Read only</span>
+    </div>
+    {{if .Explorer.Columns}}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            {{range .Explorer.Columns}}
+            <th>{{.}}</th>
+            {{end}}
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Explorer.Rows}}
+          <tr>
+            {{range .}}
+            <td>{{.}}</td>
+            {{end}}
+          </tr>
+          {{else}}
+          <tr>
+            <td colspan="{{len .Explorer.Columns}}">No rows found</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    <div class="pagination">
+      {{if gt .Explorer.Page 1}}<a
+        class="button secondary"
+        href="/connections/explore?id={{.Connection.ID}}&source={{.Connection.Source}}&schema={{.Explorer.SelectedSchema}}&table={{.Explorer.SelectedTable}}&page={{subtract .Explorer.Page 1}}"
+        >Previous</a
+      >{{end}}
+      <span>Page {{.Explorer.Page}}</span>
+      {{if .Explorer.HasNextPage}}<a
+        class="button secondary"
+        href="/connections/explore?id={{.Connection.ID}}&source={{.Connection.Source}}&schema={{.Explorer.SelectedSchema}}&table={{.Explorer.SelectedTable}}&page={{add .Explorer.Page 1}}"
+        >Next</a
+      >{{end}}
+    </div>
+    {{else}}
+    <div class="empty">
+      <strong>Table is empty</strong>
+      <p>No columns or rows were returned</p>
+    </div>
+    {{end}} {{else}}
+    <div class="empty">
+      <strong>Select a table</strong>
+      <p>Choose a table from the sidebar to browse its data</p>
+    </div>
+    {{end}}
+  </section>
+</section>
+{{else}}
+<section class="panel empty">
+  <strong>No user schemas found</strong>
+  <p>The target database has no browsable schemas</p>
+</section>
+{{end}} {{end}}

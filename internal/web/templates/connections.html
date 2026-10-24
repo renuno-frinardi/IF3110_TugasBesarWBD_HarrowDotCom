@@ -1,0 +1,76 @@
+{{define "connection-table"}}
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Type</th>
+        <th>Host</th>
+        <th>Database</th>
+        <th>Status</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .}}
+      <tr>
+        <td>
+          <a class="table-link" href="/connections/view?id={{.ID}}&source={{.Source}}"
+            ><strong>{{.Name}}</strong></a
+          >
+          <small>{{.Username}}</small>
+        </td>
+        <td>{{.DBType}}</td>
+        <td>{{.Host}}:{{.Port}}</td>
+        <td>{{.DatabaseName}}</td>
+        <td>
+          <span class="badge {{if .IsActive}}green{{else}}gray{{end}}"
+            >{{if .IsActive}}Active{{else}}Inactive{{end}}</span
+          >
+        </td>
+        <td>
+          <a class="text-link" href="/connections/view?id={{.ID}}&source={{.Source}}">View</a>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+{{end}}
+
+{{define "content"}}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Workspace / Connections</p>
+    <h1>Database connections</h1>
+    <p class="muted">Manage the databases connected to your workspace.</p>
+  </div>
+  <a class="button primary" href="/connections/new"
+    >Add connection <span>＋</span></a
+  >
+</section>
+<section class="panel">
+  <div class="toolbar">
+    <div class="search-placeholder">⌕&nbsp; Search connections</div>
+    <button class="button secondary" type="button">Filter</button>
+  </div>
+  {{if .PostgreSQLConnections}}
+  <h2>PostgreSQL connections</h2>
+  {{template "connection-table" .PostgreSQLConnections}}
+  {{else}}
+  <div class="empty">
+    <strong>No PostgreSQL connections</strong>
+    <p>Add a PostgreSQL connection to see it here</p>
+  </div>
+  {{end}}
+  {{if .MariaDBConnections}}
+  <h2>MariaDB connections</h2>
+  {{template "connection-table" .MariaDBConnections}}
+  {{else}}
+  <div class="empty">
+    <strong>No MariaDB connections</strong>
+    <p>Add a MariaDB connection to see it here</p>
+  </div>
+  {{end}}
+</section>
+{{end}}
