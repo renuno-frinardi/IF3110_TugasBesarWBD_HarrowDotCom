@@ -62,6 +62,35 @@ func EncryptSecret(secret string, hexKey string) ([]byte, error) {
 	return gcm.Seal(nonce, nonce, []byte(secret), nil), nil
 }
 
+func DecryptSecret(encrypted []byte, hexKey string) (string, error) {
+	key, err := hex.DecodeString(hexKey)
+	if err != nil || len(key) != 32 {
+		return "", fmt.Errorf("kunci harus berisi 64 karakter dari 0-9, a-f, atau A-F")
+	}
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", fmt.Errorf("gagal menyiapkan dekripsi password: %w", err)
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", fmt.Errorf("gagal menyiapkan dekripsi password: %w", err)
+	}
+
+	if len(encrypted) < gcm.NonceSize()+gcm.Overhead() {
+		return "", fmt.Errorf("data password terenkripsi terlalu pendek")
+	}
+
+	nonce := encrypted[:gcm.NonceSize()]
+	plaintext, err := gcm.Open(nil, nonce, encrypted[gcm.NonceSize():], nil)
+	if err != nil {
+		return "", fmt.Errorf("gagal mendekripsi password: %w", err)
+	}
+
+	return string(plaintext), nil
+}
+
 func ListDatabaseConnections(ctx context.Context, pool *pgxpool.Pool) ([]DatabaseConnection, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT id, name, host, port, database_name, username, db_type, ssl_mode, is_active, created_at, updated_at

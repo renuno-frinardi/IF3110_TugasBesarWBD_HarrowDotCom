@@ -38,7 +38,7 @@ func TestValidateSQL(t *testing.T) {
 			err := validateSQL(test.sql)
 			if test.invalid {
 				if !errors.Is(err, InvalidInput) {
-					t.Fatalf("mengharapkan InvalidInput, mendapat: %v", err)
+					t.Fatalf("input salah seharusnya ditolak, mendapat: %v", err)
 				}
 			} else if err != nil {
 				t.Fatalf("SQL seharusnya diterima: %v", err)
@@ -48,8 +48,8 @@ func TestValidateSQL(t *testing.T) {
 
 	t.Run("posisi_statement_ditolak", func(t *testing.T) {
 		err := validateSQL("SELECT 1; COMMIT;")
-		if err == nil || !strings.Contains(err.Error(), "statement ke-2") {
-			t.Fatalf("error harus menunjukkan statement kedua: %v", err)
+		if err == nil || !strings.Contains(err.Error(), "perintah ke-2") {
+			t.Fatalf("error harus menyebut perintah kedua: %v", err)
 		}
 	})
 }
