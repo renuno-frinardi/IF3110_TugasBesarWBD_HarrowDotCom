@@ -36,7 +36,7 @@ func ListPostgresSchemas(ctx context.Context, target *pgxpool.Pool) ([]string, e
 		ORDER BY schema_name
 	`)
 	if err != nil {
-		return nil, fmt.Errorf("list target schemas: %w", err)
+		return nil, fmt.Errorf("List target schemas: %w", err)
 	}
 	defer rows.Close()
 
@@ -44,7 +44,7 @@ func ListPostgresSchemas(ctx context.Context, target *pgxpool.Pool) ([]string, e
 	for rows.Next() {
 		var schema string
 		if err := rows.Scan(&schema); err != nil {
-			return nil, fmt.Errorf("scan target schema: %w", err)
+			return nil, fmt.Errorf("Scan target schema: %w", err)
 		}
 		schemas = append(schemas, schema)
 	}
@@ -58,7 +58,7 @@ func ListPostgresTables(ctx context.Context, target *pgxpool.Pool, schema string
 		ORDER BY table_name
 	`, schema)
 	if err != nil {
-		return nil, fmt.Errorf("list target tables: %w", err)
+		return nil, fmt.Errorf("List target tables: %w", err)
 	}
 	defer rows.Close()
 
@@ -66,7 +66,7 @@ func ListPostgresTables(ctx context.Context, target *pgxpool.Pool, schema string
 	for rows.Next() {
 		var table string
 		if err := rows.Scan(&table); err != nil {
-			return nil, fmt.Errorf("scan target table: %w", err)
+			return nil, fmt.Errorf("Scan target table: %w", err)
 		}
 		tables = append(tables, table)
 	}
@@ -104,7 +104,7 @@ func ReadPostgresTable(ctx context.Context, target *pgxpool.Pool, schema, table 
 			hasNext = true
 			break
 		}
-		
+
 		row := make([]string, len(raw))
 		for i, value := range raw {
 			if value == nil {
