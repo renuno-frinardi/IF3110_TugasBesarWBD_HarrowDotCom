@@ -24,8 +24,7 @@
       ><label
         >Database type<select name="db_type">
           <option value="postgresql">PostgreSQL</option>
-          <!-- <option value="mysql">MySQL</option>
-          <option value="mariadb">MariaDB</option> -->
+          <option value="mariadb">MariaDB</option>
         </select></label
       ><label
         >Host<input
@@ -70,6 +69,7 @@
     </div>
     <div class="form-actions">
       <a class="button secondary" href="/connections">Cancel</a
+      ><button class="button secondary" type="submit" formaction="/connections/test">Test connection</button
       ><button class="button primary" type="submit">Save connection</button>
     </div>
   </form>

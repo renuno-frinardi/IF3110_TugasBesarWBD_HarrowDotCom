@@ -30,7 +30,12 @@
       <tbody>
         {{range .Connections}}
         <tr>
-          <td><strong>{{.Name}}</strong><small>{{.Username}}</small></td>
+          <td>
+            <a class="table-link" href="/connections/view?id={{.ID}}"
+              ><strong>{{.Name}}</strong></a
+            >
+            <small>{{.Username}}</small>
+          </td>
           <td>{{.DBType}}</td>
           <td>{{.Host}}:{{.Port}}</td>
           <td>{{.DatabaseName}}</td>
@@ -40,9 +45,7 @@
             >
           </td>
           <td>
-            <button class="icon-button" type="button" aria-label="More actions">
-              •••
-            </button>
+            <a class="text-link" href="/connections/view?id={{.ID}}">View</a>
           </td>
         </tr>
         {{end}}
@@ -52,7 +55,7 @@
   {{else}}
   <div class="empty">
     <strong>No connections found</strong>
-    <p>There are no database connections in this workspace.</p>
+    <p>There are no database connections in this workspace</p>
     <a class="button primary" href="/connections/new">Add connection</a>
   </div>
   {{end}}

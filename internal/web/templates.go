@@ -18,6 +18,8 @@ func templateFuncs() template.FuncMap {
 			}
 			return value.Local().Format("02 Jan 2006, 15:04")
 		},
+		"add": func(value, amount int) int { return value + amount },
+		"subtract": func(value, amount int) int { return value - amount },
 	}
 }
 
