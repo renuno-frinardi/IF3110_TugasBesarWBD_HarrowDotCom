@@ -221,6 +221,51 @@ func TestCreateDraft(t *testing.T) {
 		}
 	})
 
+	t.Run("mengubah_draft", func(t *testing.T) {
+		list, err := store.GetByDatabase(ctx, databaseID)
+		if err != nil {
+			t.Fatalf("gagal mengambil draft: %v", err)
+		}
+		if len(list) != 1 {
+			t.Fatal("seharusnya tersedia satu draft untuk diubah")
+		}
+
+		draft := list[0]
+
+		updated, err := store.Update(
+			ctx, draft.ID, "Judul baru", "SELECT 2;",
+		)
+		if err != nil {
+			t.Fatalf("gagal mengubah draft: %v", err)
+		}
+		if updated == nil {
+			t.Fatal("hasil perubahan draft nil")
+		}
+
+		// Mastiin perubahan berhasil
+		saved, err := store.GetByID(ctx, draft.ID)
+		if err != nil {
+			t.Fatalf("gagal membaca draft: %v", err)
+		}
+		if saved == nil {
+			t.Fatal("draft tidak ditemukan")
+		}
+
+		if saved.Title != "Judul baru" || saved.SQL != "SELECT 2;" {
+			t.Error("judul atau SQL belum berubah")
+		}
+
+		if saved.UpdatedAt == nil || saved.UpdatedAt.IsZero() {
+			t.Error("waktu perubahan belum terisi")
+		}
+
+		if saved.Status != S_Draft ||
+			saved.CreatedBy != draft.CreatedBy ||
+			!saved.CreatedAt.Equal(draft.CreatedAt) {
+			t.Error("status atau informasi pembuatan ikut berubah")
+		}
+	})
+
 	var count int
 	err = pool.QueryRow(ctx,
 		"SELECT COUNT(*) FROM migrations WHERE database_id = $1", databaseID,

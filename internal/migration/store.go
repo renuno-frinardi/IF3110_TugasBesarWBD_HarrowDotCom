@@ -38,14 +38,11 @@ func (s *Store) CreateDraft(ctx context.Context, databaseID int, title string, s
 func (s *Store) GetByID(ctx context.Context, id int) (*Migration, error) {
 	m := &Migration{}
 
-	query := `
-		SELECT
-			id, database_id, version, title, sql, status,
+	query := `SELECT id, database_id, version, title, sql, status,
 			created_by, executed_by, created_at, updated_at,
 			start_time, finish_time, error_message
-		FROM migrations
-		WHERE id = $1
-	`
+			FROM migrations
+			WHERE id = $1`
 
 	err := s.pool.QueryRow(ctx, query, id).Scan(&m.ID, &m.DatabaseID, &m.Version, &m.Title, &m.SQL, &m.Status,
 		&m.CreatedBy, &m.ExecutedBy, &m.CreatedAt, &m.UpdatedAt, &m.StartTime, &m.FinishTime, &m.ErrorMessage)
@@ -58,15 +55,12 @@ func (s *Store) GetByID(ctx context.Context, id int) (*Migration, error) {
 }
 
 func (s *Store) GetByDatabase(ctx context.Context, databaseID int) ([]Migration, error) {
-	query := `
-		SELECT
-			id, database_id, version, title, sql, status,
+	query := `SELECT id, database_id, version, title, sql, status,
 			created_by, executed_by, created_at, updated_at,
 			start_time, finish_time, error_message
-		FROM migrations
-		WHERE database_id = $1
-		ORDER BY version, created_at, id
-	`
+			FROM migrations
+			WHERE database_id = $1
+			ORDER BY version, created_at, id`
 
 	rows, err := s.pool.Query(ctx, query, databaseID)
 	if err != nil {
@@ -94,4 +88,20 @@ func (s *Store) GetByDatabase(ctx context.Context, databaseID int) ([]Migration,
 	}
 
 	return migrations, nil
+}
+
+func (s *Store) Update(ctx context.Context, id int, title string, sql string) (*Migration, error) {
+	m := &Migration{}
+	query := `UPDATE migrations 
+			SET title = $1, sql = $2, updated_at = NOW()
+			WHERE id=$3 AND status = 'draft' 
+			RETURNING id, database_id, version, title, sql, status, created_by, executed_by, created_at,
+			updated_at, start_time, finish_time, error_message`
+
+	err := s.pool.QueryRow(ctx, query, title, sql, id).Scan(&m.ID, &m.DatabaseID, &m.Version, &m.Title, &m.SQL, &m.Status, &m.CreatedBy, &m.ExecutedBy, &m.CreatedAt, &m.UpdatedAt, &m.StartTime, &m.FinishTime, &m.ErrorMessage)
+
+	if err != nil {
+		return nil, fmt.Errorf("gagal mengubah draft migration: %w", err)
+	}
+	return m, nil
 }
