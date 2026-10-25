@@ -5,7 +5,7 @@ import "testing"
 func TestMariaStatements(t *testing.T) {
 	statements, err := MariaDBStatements("-- komentar\nINSERT INTO barang VALUES (1, 'it''s; COMMIT;'); # komentar\nSELECT * FROM `barang`;")
 	if err != nil || len(statements) != 2 {
-		t.Fatalf("pemisahan SQL gagal: %v, %v", statements, err)
+		t.Fatalf("SQL splitting failed: %v, %v", statements, err)
 	}
 	if err := ValidateMariaDBStatements(statements); err != nil {
 		t.Fatal(err)
@@ -16,7 +16,7 @@ func TestMariaStatements(t *testing.T) {
 			err = ValidateMariaDBStatements(statements)
 		}
 		if err == nil {
-			t.Fatalf("SQL harus ditolak: %s", query)
+			t.Fatalf("SQL must be rejected: %s", query)
 		}
 	}
 }

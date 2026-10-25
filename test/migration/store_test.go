@@ -31,7 +31,7 @@ func TestCreateDraft(t *testing.T) {
 	var databaseID int
 	err := pool.QueryRow(ctx, `INSERT INTO database_connections (name, host, port, database_name, username, password_ciphertext) VALUES ($1, 'localhost', 5432, 'test_target', 'test_user', $2) RETURNING id`, name, []byte("dummy")).Scan(&databaseID)
 	if err != nil {
-		t.Fatalf("gagal membuat data koneksi test: %v", err)
+		t.Fatalf("failed to create the test connection data: %v", err)
 	}
 
 	t.Cleanup(func() {
@@ -42,11 +42,11 @@ func TestCreateDraft(t *testing.T) {
 			"DELETE FROM database_connections WHERE id = $1",
 		} {
 			if _, err := pool.Exec(cleanupCtx, query, databaseID); err != nil {
-				t.Errorf("gagal membersihkan data test: %v", err)
+				t.Errorf("failed to clean up test data: %v", err)
 			}
 		}
 		if _, err := pool.Exec(cleanupCtx, "DROP TABLE IF EXISTS "+name); err != nil {
-			t.Errorf("gagal membersihkan tabel percobaan: %v", err)
+			t.Errorf("failed to clean up the test table: %v", err)
 		}
 	})
 
@@ -55,70 +55,70 @@ func TestCreateDraft(t *testing.T) {
 		sqlText := "CREATE TABLE " + name + " (id INT);"
 		m, err := store.CreateDraft(ctx, databaseID, title, sqlText, 7)
 		if err != nil {
-			t.Fatalf("gagal membuat draft: %v", err)
+			t.Fatalf("failed to create the draft: %v", err)
 		}
 
 		if m == nil {
-			t.Fatal("draft yang dikembalikan nil")
+			t.Fatal("the returned draft is nil")
 		}
 
 		if m.ID <= 0 {
-			t.Error("ID draft belum terisi")
+			t.Error("draft ID is not set")
 		}
 
 		if m.CreatedAt.IsZero() {
-			t.Error("waktu pembuatan belum terisi")
+			t.Error("creation time is not set")
 		}
 
 		if m.DatabaseID != databaseID || m.Title != title ||
 			m.SQL != sqlText || m.Status != S_Draft || m.CreatedBy != 7 {
-			t.Error("data draft tidak sesuai dengan input")
+			t.Error("draft data does not match the input")
 		}
 
 		// mastiin data kesimpen
 
 		saved, err := store.GetByID(ctx, m.ID)
 		if err != nil {
-			t.Fatalf("gagal mengambil draft: %v", err)
+			t.Fatalf("failed to load the draft: %v", err)
 		}
 
 		if saved == nil {
-			t.Fatal("draft yang sudah disimpan tidak ditemukan")
+			t.Fatal("the saved draft was not found")
 		}
 
 		if saved.ID != m.ID || saved.DatabaseID != databaseID ||
 			saved.Title != title || saved.SQL != sqlText ||
 			saved.Status != S_Draft || saved.CreatedBy != 7 {
-			t.Error("data draft yang dibaca tidak sesuai")
+			t.Error("read draft data is incorrect")
 		}
 
 		if !saved.CreatedAt.Equal(m.CreatedAt) {
-			t.Error("waktu pembuatan draft tidak sesuai")
+			t.Error("draft creation time is incorrect")
 		}
 
 		if saved.Version != nil || saved.ExecutedBy != nil ||
 			saved.StartTime != nil || saved.FinishTime != nil ||
 			saved.ErrorMessage != nil {
-			t.Error("draft belum seharusnya memiliki informasi eksekusi")
+			t.Error("the draft should not have execution information yet")
 		}
 
 		var tableExists bool
 		err = pool.QueryRow(ctx, "SELECT to_regclass($1) IS NOT NULL", name).Scan(&tableExists)
 		if err != nil {
-			t.Fatalf("gagal periksa tabel: %v", err)
+			t.Fatalf("failed to inspect the table: %v", err)
 		}
 		if tableExists {
-			t.Error("SQL draft sudah dijalankan; seharusnya hanya disimpan sebagai teks")
+			t.Error("draft SQL was executed; it should only be stored as text")
 		}
 	})
 
 	t.Run("migration_tidak_ditemukan", func(t *testing.T) {
 		m, err := store.GetByID(ctx, -999)
 		if !errors.Is(err, pgx.ErrNoRows) {
-			t.Fatalf("seharusnya data gagal ditemukan")
+			t.Fatalf("failed data should be found")
 		}
 		if m != nil {
-			t.Error("migration harus nil jika ID tidak ditemukan")
+			t.Error("migration must be nil when the ID is not found")
 		}
 	})
 
@@ -126,11 +126,11 @@ func TestCreateDraft(t *testing.T) {
 		m, err := store.CreateDraft(ctx, -1, "Database tidak ada", "SELECT 1;", 7)
 
 		if err == nil {
-			t.Fatal("seharusnya gagal karena database tidak terdaftar")
+			t.Fatal("the operation should fail because the database is not registered")
 		}
 
 		if m != nil {
-			t.Error("migration harus nil ketika penyimpanan gagal")
+			t.Error("migration must be nil when storage fails")
 		}
 	})
 
@@ -139,7 +139,7 @@ func TestCreateDraft(t *testing.T) {
 		stop()
 		m, err := store.CreateDraft(canceledCtx, databaseID, "Canceled draft", "SELECT 1;", 7)
 		if !errors.Is(err, context.Canceled) || m != nil {
-			t.Fatalf("mengharapkan migration nil dan context.Canceled, mendapat: %v", err)
+			t.Fatalf("expected a nil migration and context.Canceled, got: %v", err)
 		}
 	})
 
@@ -155,7 +155,7 @@ func TestCreateDraft(t *testing.T) {
 		`, name+"_other", []byte("dummy")).Scan(&otherDatabaseID)
 
 		if err != nil {
-			t.Fatalf("gagal membuat koneksi kedua: %v", err)
+			t.Fatalf("failed to create the second connection: %v", err)
 		}
 
 		t.Cleanup(func() {
@@ -169,7 +169,7 @@ func TestCreateDraft(t *testing.T) {
 				"DELETE FROM database_connections WHERE id = $1",
 			} {
 				if _, err := pool.Exec(cleanupCtx, query, otherDatabaseID); err != nil {
-					t.Errorf("gagal membersihkan data test: %v", err)
+					t.Errorf("failed to clean up test data: %v", err)
 				}
 			}
 		})
@@ -177,10 +177,10 @@ func TestCreateDraft(t *testing.T) {
 		// Database kedua belum memiliki migration.
 		emptyList, err := store.GetByDatabase(ctx, otherDatabaseID)
 		if err != nil {
-			t.Fatalf("gagal mengambil daftar kosong: %v", err)
+			t.Fatalf("failed to load the empty list: %v", err)
 		}
 		if len(emptyList) != 0 {
-			t.Fatal("database kedua seharusnya belum memiliki migration")
+			t.Fatal("the second database should not have migrations yet")
 		}
 
 		// nyimpen draft di db 2.
@@ -188,47 +188,47 @@ func TestCreateDraft(t *testing.T) {
 			ctx, otherDatabaseID, "Draft kedua", "SELECT 2;", 7,
 		)
 		if err != nil {
-			t.Fatalf("gagal membuat draft kedua: %v", err)
+			t.Fatalf("failed to create the second draft: %v", err)
 		}
 		if otherDraft == nil {
-			t.Fatal("draft kedua tidak tersedia")
+			t.Fatal("the second draft is unavailable")
 		}
 
 		list, err := store.GetByDatabase(ctx, databaseID)
 		if err != nil {
-			t.Fatalf("gagal mengambil daftar migration: %v", err)
+			t.Fatalf("failed to load the migration list: %v", err)
 		}
 		if len(list) != 1 {
-			t.Fatalf("mengharapkan 1 migration, mendapat %d", len(list))
+			t.Fatalf("expected 1 migration, got %d", len(list))
 		}
 
 		if list[0].DatabaseID != databaseID ||
 			list[0].Title != "test's draft "+name ||
 			list[0].Status != S_Draft {
-			t.Error("data migration database pertama tidak sesuai")
+			t.Error("the first database migration data is incorrect")
 		}
 
 		otherList, err := store.GetByDatabase(ctx, otherDatabaseID)
 		if err != nil {
-			t.Fatalf("gagal mengambil daftar database kedua: %v", err)
+			t.Fatalf("failed to load the second database list: %v", err)
 		}
 		if len(otherList) != 1 {
-			t.Fatalf("mengharapkan 1 migration, mendapat %d", len(otherList))
+			t.Fatalf("expected 1 migration, got %d", len(otherList))
 		}
 
 		if otherList[0].ID != otherDraft.ID ||
 			otherList[0].DatabaseID != otherDatabaseID {
-			t.Error("data migration database kedua tidak sesuai")
+			t.Error("the second database migration data is incorrect")
 		}
 	})
 
 	t.Run("mengubah_draft", func(t *testing.T) {
 		list, err := store.GetByDatabase(ctx, databaseID)
 		if err != nil {
-			t.Fatalf("gagal mengambil draft: %v", err)
+			t.Fatalf("failed to load the draft: %v", err)
 		}
 		if len(list) != 1 {
-			t.Fatal("seharusnya tersedia satu draft untuk diubah")
+			t.Fatal("exactly one draft should be available for update")
 		}
 
 		draft := list[0]
@@ -237,7 +237,7 @@ func TestCreateDraft(t *testing.T) {
 			ctx, draft.ID, "Judul baru", "SELECT 2;",
 		)
 		if err != nil {
-			t.Fatalf("gagal mengubah draft: %v", err)
+			t.Fatalf("failed to update the draft: %v", err)
 		}
 		if updated == nil {
 			t.Fatal("hasil perubahan draft nil")
@@ -246,34 +246,34 @@ func TestCreateDraft(t *testing.T) {
 		// Mastiin perubahan berhasil
 		saved, err := store.GetByID(ctx, draft.ID)
 		if err != nil {
-			t.Fatalf("gagal membaca draft: %v", err)
+			t.Fatalf("failed to read the draft: %v", err)
 		}
 		if saved == nil {
-			t.Fatal("draft tidak ditemukan")
+			t.Fatal("draft was not found")
 		}
 
 		if saved.Title != "Judul baru" || saved.SQL != "SELECT 2;" {
-			t.Error("judul atau SQL belum berubah")
+			t.Error("the title or SQL was not updated")
 		}
 
 		if saved.UpdatedAt == nil || saved.UpdatedAt.IsZero() {
-			t.Error("waktu perubahan belum terisi")
+			t.Error("update time is not set")
 		}
 
 		if saved.Status != S_Draft ||
 			saved.CreatedBy != draft.CreatedBy ||
 			!saved.CreatedAt.Equal(draft.CreatedAt) {
-			t.Error("status atau informasi pembuatan ikut berubah")
+			t.Error("status or creation information changed")
 		}
 	})
 
 	t.Run("menolak_update_bukan_draft", func(t *testing.T) {
 		list, err := store.GetByDatabase(ctx, databaseID)
 		if err != nil {
-			t.Fatalf("gagal mengambil draft: %v", err)
+			t.Fatalf("failed to load the draft: %v", err)
 		}
 		if len(list) != 1 {
-			t.Fatal("seharusnya tersedia satu draft untuk diubah")
+			t.Fatal("exactly one draft should be available for update")
 		}
 		draft := list[0]
 
@@ -281,29 +281,29 @@ func TestCreateDraft(t *testing.T) {
 			_, err := pool.Exec(ctx, "UPDATE migrations SET status = $1 WHERE id = $2", status, draft.ID)
 
 			if err != nil {
-				t.Fatalf("gagal mengubah status draft menjadi %s: %v", status, err)
+				t.Fatalf("failed to change the draft status to %s: %v", status, err)
 			}
 
 			m, err := store.Update(ctx, draft.ID, "Tidak boleh berubah", "SELECT 3;")
 
 			if !errors.Is(err, pgx.ErrNoRows) {
-				t.Fatalf("seharusnya update ditolak: %v", err)
+				t.Fatalf("the update should be rejected: %v", err)
 			}
 			if m != nil {
-				t.Fatal("migration harus nil ketika update ditolak")
+				t.Fatal("migration must be nil when the update is rejected")
 			}
 
 			// Mastiin data ga berubah
 			saved, err := store.GetByID(ctx, draft.ID)
 			if err != nil {
-				t.Fatalf("gagal membaca draft: %v", err)
+				t.Fatalf("failed to read the draft: %v", err)
 			}
 			if saved == nil {
-				t.Fatal("draft tidak ditemukan")
+				t.Fatal("draft was not found")
 			}
 
 			if saved.Title != draft.Title || saved.SQL != draft.SQL || saved.Status != status {
-				t.Error("judul atau SQL ikut berubah padahal update ditolak")
+				t.Error("the title or SQL changed even though the update was rejected")
 			}
 		}
 	})
@@ -311,11 +311,11 @@ func TestCreateDraft(t *testing.T) {
 		m, err := store.Update(ctx, -999, "Tidak ditemukan", "SELECT 1;")
 
 		if !errors.Is(err, pgx.ErrNoRows) {
-			t.Fatalf("seharusnya ID tidak ditemukan, mendapat: %v", err)
+			t.Fatalf("the ID should not be found, got: %v", err)
 		}
 
 		if m != nil {
-			t.Error("hasil update harus nil jika ID tidak ditemukan")
+			t.Error("the update result must be nil when the ID is not found")
 		}
 	})
 
@@ -324,7 +324,7 @@ func TestCreateDraft(t *testing.T) {
 		"SELECT COUNT(*) FROM migrations WHERE database_id = $1", databaseID,
 	).Scan(&count)
 	if err != nil || count != 1 {
-		t.Errorf("seharusnya hanya satu draft tersimpan; mendapat %d, error: %v", count, err)
+		t.Errorf("exactly one draft should be saved; got %d, error: %v", count, err)
 	}
 }
 
@@ -332,21 +332,21 @@ func openTestDatabase(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 
 	if err := godotenv.Load("../../.env"); err != nil {
-		t.Fatal("gagal membaca file .env")
+		t.Fatal("failed to read the .env file")
 	}
 
 	url := os.Getenv("TEST_DATABASE_URL")
 	if url == "" {
-		t.Fatal("TEST_DATABASE_URL belum diatur")
+		t.Fatal("TEST_DATABASE_URL is not configured")
 	}
 
 	config, err := pgxpool.ParseConfig(url)
 	if err != nil {
-		t.Fatal("konfigurasi database tidak valid")
+		t.Fatal("database configuration is invalid")
 	}
 
 	if !strings.HasSuffix(config.ConnConfig.Database, "_test") {
-		t.Fatal("nama database untuk testing harus berakhiran _test")
+		t.Fatal("the test database name must end with _test")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -354,12 +354,12 @@ func openTestDatabase(t *testing.T) *pgxpool.Pool {
 
 	pool, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {
-		t.Fatal("gagal membuat koneksi database")
+		t.Fatal("failed to create the database connection")
 	}
 	t.Cleanup(pool.Close)
 
 	if err := pool.Ping(ctx); err != nil {
-		t.Fatal("database tidak dapat dihubungi")
+		t.Fatal("database is unreachable")
 	}
 
 	return pool
