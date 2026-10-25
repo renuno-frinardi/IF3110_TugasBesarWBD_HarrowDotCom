@@ -328,7 +328,14 @@ func exploreConnectionHandler(stores *appStores) http.HandlerFunc {
 					http.Error(w, "invalid table", http.StatusBadRequest)
 					return
 				}
-				explorer.Columns, explorer.Rows, explorer.HasNextPage, err = store.ReadPostgresTable(r.Context(), target, explorer.SelectedSchema, explorer.SelectedTable, explorer.Page)
+				explorer.Constraints, err = store.ListPostgresConstraints(r.Context(), target, explorer.SelectedSchema, explorer.SelectedTable)
+				if err == nil {
+					explorer.Indexes, err = store.ListPostgresIndexes(r.Context(), target, explorer.SelectedSchema, explorer.SelectedTable)
+				}
+
+				if err == nil {
+					explorer.Columns, explorer.Rows, explorer.HasNextPage, err = store.ReadPostgresTable(r.Context(), target, explorer.SelectedSchema, explorer.SelectedTable, explorer.Page)
+				}
 			}
 		}
 
@@ -374,7 +381,14 @@ func exploreMariaDBConnection(w http.ResponseWriter, r *http.Request, connection
 				http.Error(w, "invalid table", http.StatusBadRequest)
 				return
 			}
-			explorer.Columns, explorer.Rows, explorer.HasNextPage, err = store.ReadMariaDBTable(r.Context(), target, explorer.SelectedSchema, explorer.SelectedTable, explorer.Page)
+			explorer.Constraints, err = store.ListMariaDBConstraints(r.Context(), target, explorer.SelectedSchema, explorer.SelectedTable)
+			if err == nil {
+				explorer.Indexes, err = store.ListMariaDBIndexes(r.Context(), target, explorer.SelectedSchema, explorer.SelectedTable)
+			}
+
+			if err == nil {
+				explorer.Columns, explorer.Rows, explorer.HasNextPage, err = store.ReadMariaDBTable(r.Context(), target, explorer.SelectedSchema, explorer.SelectedTable, explorer.Page)
+			}
 		}
 	}
 

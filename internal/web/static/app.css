@@ -528,7 +528,7 @@ select:focus {
   display: block;
   overflow: hidden;
   border-radius: 6px;
-  color: var(--muted);
+  color: #123d2d;
   padding: 9px 10px;
   text-decoration: none;
   text-overflow: ellipsis;
@@ -544,6 +544,18 @@ select:focus {
 
 .explorer-content {
   min-width: 0;
+}
+
+.explorer-content .table-wrap th {
+  color: #123d2d;
+  font-size: 14px;
+}
+
+.explorer-metadata h3 {
+  color: #000000;
+  font-size: 17px;
+  margin: 22px 0 10px;
+  font-weight: 600;
 }
 
 .explorer-content .panel-heading {
