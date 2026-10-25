@@ -8,6 +8,7 @@
 </section>
 <section class="panel form-panel">
   <form method="post" action="/connections/edit?id={{.Connection.ID}}&source={{.Connection.Source}}">
+    {{csrfField .CSRFToken}}
     <div class="form-grid">
       <label>Connection name
         <input name="name" required maxlength="100" value="{{.Connection.Name}}" />

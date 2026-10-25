@@ -2,12 +2,14 @@
 <section class="page-heading">
   <div>
     <p class="eyebrow">Overview</p>
-    <h1>Hello, Admin</h1>
+    <h1>Hello, {{if .CurrentUser}}{{.CurrentUser.Username}}{{else}}User{{end}}</h1>
     <p class="muted">Monitor your database workspace from one place</p>
   </div>
+  {{if .IsAdmin}}
   <a class="button primary" href="/connections/new"
     >Add connection <span>＋</span></a
   >
+  {{end}}
 </section>
 <section class="stats">
   <div class="stat-card">
