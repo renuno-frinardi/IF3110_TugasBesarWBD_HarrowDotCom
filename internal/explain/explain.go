@@ -223,6 +223,7 @@ func ExecuteMigrationTransactional(ctx context.Context, platformDB *sql.DB, targ
 	return err
 }
 
+// Mengecek dan mengembalikan waktu commit
 func commitTimeOrNow(t time.Time) time.Time {
 	if t.IsZero() {
 		return time.Now().UTC()
