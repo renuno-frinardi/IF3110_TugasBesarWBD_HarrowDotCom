@@ -107,12 +107,50 @@ func (app *application) connectionsHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	search := strings.TrimSpace(r.URL.Query().Get("search"))
+	typeFilter := r.URL.Query().Get("type")
+	statusFilter := r.URL.Query().Get("status")
+	postgresqlConnections = filterConnections(postgresqlConnections, search, typeFilter, statusFilter)
+	mariaDBConnections = filterConnections(mariaDBConnections, search, typeFilter, statusFilter)
+
 	app.renderWithContext(w, r, "connections", pageData{
-		Title:                 "Connections",
-		Active:                "connections",
-		PostgreSQLConnections: postgresqlConnections,
-		MariaDBConnections:    mariaDBConnections,
+		Title:                  "Connections",
+		Active:                 "connections",
+		PostgreSQLConnections:  postgresqlConnections,
+		MariaDBConnections:     mariaDBConnections,
+		ConnectionSearch:       search,
+		ConnectionTypeFilter:   typeFilter,
+		ConnectionStatusFilter: statusFilter,
 	})
+}
+
+func filterConnections(connections []store.DatabaseConnection, search, typeFilter, statusFilter string) []store.DatabaseConnection {
+	search = strings.ToLower(strings.TrimSpace(search))
+	filtered := make([]store.DatabaseConnection, 0, len(connections))
+
+	for _, connection := range connections {
+		if typeFilter != "" && connection.DBType != typeFilter {
+			continue
+		}
+		if statusFilter == "active" && !connection.IsActive {
+			continue
+		}
+		if statusFilter == "inactive" && connection.IsActive {
+			continue
+		}
+		if search != "" {
+			matches := strings.Contains(strings.ToLower(connection.Name), search) ||
+				strings.Contains(strings.ToLower(connection.Host), search) ||
+				strings.Contains(strings.ToLower(connection.DatabaseName), search) ||
+				strings.Contains(strings.ToLower(connection.Username), search)
+			if !matches {
+				continue
+			}
+		}
+		filtered = append(filtered, connection)
+	}
+
+	return filtered
 }
 
 func (app *application) connectionDetailHandler(w http.ResponseWriter, r *http.Request) {
@@ -217,7 +255,13 @@ func (app *application) exploreConnectionHandler(w http.ResponseWriter, r *http.
 				http.Error(w, "invalid table", http.StatusBadRequest)
 				return
 			}
-			explorer.Columns, explorer.Rows, explorer.HasNextPage, err = store.ReadPostgresTable(r.Context(), target, explorer.SelectedSchema, explorer.SelectedTable, explorer.Page)
+			explorer.Constraints, err = store.ListPostgresConstraints(r.Context(), target, explorer.SelectedSchema, explorer.SelectedTable)
+			if err == nil {
+				explorer.Indexes, err = store.ListPostgresIndexes(r.Context(), target, explorer.SelectedSchema, explorer.SelectedTable)
+			}
+			if err == nil {
+				explorer.Columns, explorer.Rows, explorer.HasNextPage, err = store.ReadPostgresTable(r.Context(), target, explorer.SelectedSchema, explorer.SelectedTable, explorer.Page)
+			}
 		}
 	}
 
@@ -265,7 +309,13 @@ func (app *application) exploreMariaDBConnection(w http.ResponseWriter, r *http.
 				http.Error(w, "invalid table", http.StatusBadRequest)
 				return
 			}
-			explorer.Columns, explorer.Rows, explorer.HasNextPage, err = store.ReadMariaDBTable(r.Context(), target, explorer.SelectedSchema, explorer.SelectedTable, explorer.Page)
+			explorer.Constraints, err = store.ListMariaDBConstraints(r.Context(), target, explorer.SelectedSchema, explorer.SelectedTable)
+			if err == nil {
+				explorer.Indexes, err = store.ListMariaDBIndexes(r.Context(), target, explorer.SelectedSchema, explorer.SelectedTable)
+			}
+			if err == nil {
+				explorer.Columns, explorer.Rows, explorer.HasNextPage, err = store.ReadMariaDBTable(r.Context(), target, explorer.SelectedSchema, explorer.SelectedTable, explorer.Page)
+			}
 		}
 	}
 
