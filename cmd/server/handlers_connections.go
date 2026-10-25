@@ -66,7 +66,7 @@ func (app *application) dashboardHandler(w http.ResponseWriter, r *http.Request)
 	if user != nil {
 		for _, c := range connections {
 			level, accessErr := app.dbAuthorizer.EffectiveDatabaseAccessForSource(r.Context(), user.ID, c.ID, c.Source)
-			if user.IsAdmin || (accessErr == nil && level == authz.LevelViewEdit) {
+			if accessErr == nil && level == authz.LevelViewEdit {
 				editableConnections = append(editableConnections, c)
 			}
 		}
@@ -207,7 +207,7 @@ func (app *application) exploreConnectionHandler(w http.ResponseWriter, r *http.
 		return
 	}
 
-	if !user.IsAdmin && !app.checkDatabasePermission(w, r, id, source, authz.ActionDBView) {
+	if !app.checkDatabasePermission(w, r, id, source, authz.ActionDBView) {
 		return
 	}
 
@@ -292,7 +292,7 @@ func (app *application) exploreConnectionHandler(w http.ResponseWriter, r *http.
 	}
 
 	principal := authz.Principal{UserID: user.ID, Username: user.Username, IsAdmin: user.IsAdmin}
-	canEdit := user.IsAdmin || app.authorizer.Can(r.Context(), principal, authz.ActionMigrationExecute, authz.Resource{DatabaseID: id, Source: source}) == nil
+	canEdit := app.authorizer.Can(r.Context(), principal, authz.ActionMigrationExecute, authz.Resource{DatabaseID: id, Source: source}) == nil
 
 	if err != nil {
 		app.logger.Printf("Read target database metadata failed for connection %d: %v", connection.ID, err)
@@ -362,7 +362,7 @@ func (app *application) exploreMariaDBConnection(w http.ResponseWriter, r *http.
 
 	user, _ := auth.UserFromContext(r.Context())
 	principal := authz.Principal{UserID: user.ID, Username: user.Username, IsAdmin: user.IsAdmin}
-	canEdit := user.IsAdmin || app.authorizer.Can(r.Context(), principal, authz.ActionMigrationExecute, authz.Resource{DatabaseID: connection.ID, Source: connection.Source}) == nil
+	canEdit := app.authorizer.Can(r.Context(), principal, authz.ActionMigrationExecute, authz.Resource{DatabaseID: connection.ID, Source: connection.Source}) == nil
 
 	if err != nil {
 		app.logger.Printf("Read MariaDB target metadata failed for connection %d: %v", connection.ID, err)
@@ -433,7 +433,7 @@ func (app *application) exploreInsertRowHandler(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	if !user.IsAdmin && !app.checkDatabasePermission(w, r, id, source, authz.ActionMigrationExecute) {
+	if !app.checkDatabasePermission(w, r, id, source, authz.ActionMigrationExecute) {
 		return
 	}
 
@@ -553,7 +553,7 @@ func (app *application) exploreUpdateRowHandler(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	if !user.IsAdmin && !app.checkDatabasePermission(w, r, id, source, authz.ActionMigrationExecute) {
+	if !app.checkDatabasePermission(w, r, id, source, authz.ActionMigrationExecute) {
 		return
 	}
 
@@ -677,7 +677,7 @@ func (app *application) exploreDeleteRowHandler(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	if !user.IsAdmin && !app.checkDatabasePermission(w, r, id, source, authz.ActionMigrationExecute) {
+	if !app.checkDatabasePermission(w, r, id, source, authz.ActionMigrationExecute) {
 		return
 	}
 
