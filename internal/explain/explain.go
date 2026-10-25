@@ -4,17 +4,20 @@ package explain
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pganalyze/pg_query_go/v6"
 )
 
 const NotApplicableMessage = "tidak berlaku"
 
 var ErrEmptyQuery = errors.New("SQL query cannot be empty")
+var ErrMultipleStatements = errors.New("EXPLAIN hanya mendukung satu statement SQL")
 
 // Menyimpan hasil statement SQL
 type Result struct {
@@ -27,33 +30,41 @@ type Result struct {
 
 // Mengembalikan apakah statement SQL adalah pure DDL
 func IsPureDDL(sqlText string) bool {
-	cleaned := stripSQLComments(sqlText)
-	cleaned = strings.TrimSpace(cleaned)
-	cleaned = strings.TrimSuffix(cleaned, ";")
-	cleaned = strings.TrimSpace(cleaned)
-	if cleaned == "" {
+	kinds, ok := statementKinds(sqlText)
+	if !ok || len(kinds) != 1 {
 		return false
 	}
-
-	upper := strings.ToUpper(cleaned)
-	tokens := strings.Fields(upper)
-	if len(tokens) == 0 {
+	switch kinds[0] {
+	case "CreateTableAsStmt", "SelectStmt", "InsertStmt", "UpdateStmt", "DeleteStmt", "MergeStmt", "CallStmt", "PrepareStmt", "ExecuteStmt":
 		return false
-	}
-
-	switch tokens[0] {
-	case "SELECT", "INSERT", "UPDATE", "DELETE", "MERGE", "VALUES", "WITH", "TABLE":
-		return false
-	case "CREATE":
-		if strings.Contains(upper, " AS SELECT ") || strings.Contains(upper, " AS (SELECT ") {
-			return false
-		}
-		return true
-	case "ALTER", "DROP", "TRUNCATE", "GRANT", "REVOKE", "COMMENT", "RENAME", "SET", "VACUUM", "ANALYZE":
-		return true
 	default:
 		return true
 	}
+}
+
+func statementKinds(sqlText string) ([]string, bool) {
+	parsed, err := pg_query.ParseToJSON(sqlText)
+	if err != nil {
+		return nil, false
+	}
+	var result struct {
+		Statements []struct {
+			Statement map[string]json.RawMessage `json:"stmt"`
+		} `json:"stmts"`
+	}
+	if err := json.Unmarshal([]byte(parsed), &result); err != nil {
+		return nil, false
+	}
+	kinds := make([]string, 0, len(result.Statements))
+	for _, statement := range result.Statements {
+		if len(statement.Statement) != 1 {
+			return nil, false
+		}
+		for kind := range statement.Statement {
+			kinds = append(kinds, kind)
+		}
+	}
+	return kinds, true
 }
 
 // Menghilangkan komen SQL
@@ -90,6 +101,14 @@ func ExplainPostgres(ctx context.Context, target *pgxpool.Pool, sqlText string, 
 		return nil, ErrEmptyQuery
 	}
 
+	kinds, ok := statementKinds(trimmed)
+	if !ok {
+		return nil, fmt.Errorf("Parse SQL for explain: invalid SQL")
+	}
+	if len(kinds) != 1 {
+		return nil, ErrMultipleStatements
+	}
+
 	if IsPureDDL(trimmed) {
 		return &Result{
 			SQL:           trimmed,
@@ -101,12 +120,12 @@ func ExplainPostgres(ctx context.Context, target *pgxpool.Pool, sqlText string, 
 	}
 
 	if target == nil {
-		return nil, errors.New("target database connection is nil")
+		return nil, errors.New("Target database connection is nil")
 	}
 
 	tx, err := target.Begin(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("begin explain transaction: %w", err)
+		return nil, fmt.Errorf("Begin explain transaction: %w", err)
 	}
 	defer func() {
 		_ = tx.Rollback(context.Background())
@@ -136,11 +155,11 @@ func ExplainPostgres(ctx context.Context, target *pgxpool.Pool, sqlText string, 
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		_ = tx.Rollback(ctx)
-		return nil, fmt.Errorf("iterate explain rows: %w", err)
+		return nil, fmt.Errorf("Iterate explain rows: %w", err)
 	}
 
 	if err := tx.Rollback(ctx); err != nil {
-		return nil, fmt.Errorf("rollback explain transaction: %w", err)
+		return nil, fmt.Errorf("Rollback explain transaction: %w", err)
 	}
 
 	return &Result{
