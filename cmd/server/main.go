@@ -32,6 +32,7 @@ type pageData struct {
 	CSRFToken              string
 	Stats                  dashboardStats
 	Connections            []store.DatabaseConnection
+	EditableConnections    []store.DatabaseConnection
 	PostgreSQLConnections  []store.DatabaseConnection
 	MariaDBConnections     []store.DatabaseConnection
 	PostgreSQLTable        connectionTableData
