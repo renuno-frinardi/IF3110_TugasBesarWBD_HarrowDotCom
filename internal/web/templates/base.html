@@ -25,6 +25,7 @@
           {{end}}
           {{else}}
           <a href="/login"{{if eq .Active "login"}} class="active"{{end}}>Sign in</a>
+          <a href="/signup"{{if eq .Active "signup"}} class="active"{{end}}>Sign up</a>
           {{end}}
         </nav>
         <div class="sidebar-footer">
@@ -48,6 +49,7 @@
             </form>
             {{else}}
             <a class="button secondary" href="/login">Sign in</a>
+            <a class="button primary" href="/signup">Sign up</a>
             {{end}}
           </div>
         </header>

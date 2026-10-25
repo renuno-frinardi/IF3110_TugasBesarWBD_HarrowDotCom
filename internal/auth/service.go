@@ -228,6 +228,43 @@ func (s *Service) SeedAdmin(ctx context.Context, username, password string) (*Us
 	return s.GetUserByID(ctx, userID)
 }
 
+// Mendaftarkan user baru secara mandiri tanpa hak akses / privilege apa pun
+func (s *Service) RegisterUser(ctx context.Context, username, email, password string) (*User, error) {
+	username = strings.TrimSpace(username)
+	email = strings.TrimSpace(email)
+	if username == "" || len(username) > 50 {
+		return nil, errors.New("username must be between 1 and 50 characters")
+	}
+	if strings.TrimSpace(password) == "" {
+		return nil, ErrEmptyPassword
+	}
+	if len(password) < 8 {
+		return nil, errors.New("password must be at least 8 characters")
+	}
+
+	hash, err := HashPassword(password)
+	if err != nil {
+		return nil, err
+	}
+
+	var nullEmail sql.NullString
+	if email != "" {
+		nullEmail = sql.NullString{String: email, Valid: true}
+	}
+
+	var userID int64
+	err = s.db.QueryRowContext(ctx, `
+		INSERT INTO users (username, email, password_hash, is_active)
+		VALUES ($1, $2, $3, TRUE)
+		RETURNING id
+	`, username, nullEmail, hash).Scan(&userID)
+	if err != nil {
+		return nil, fmt.Errorf("register user: %w", err)
+	}
+
+	return s.GetUserByID(ctx, userID)
+}
+
 // Membaca password admin awal dari .env
 func ReadSeedPassword(r io.Reader) (string, error) {
 	if envPass := os.Getenv("SEED_ADMIN_PASSWORD"); envPass != "" {
