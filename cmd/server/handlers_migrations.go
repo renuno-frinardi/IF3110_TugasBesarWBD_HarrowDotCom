@@ -114,12 +114,6 @@ func (app *application) migrationCreateHandler(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	if source == "mariadb" || source == "mysql" {
-		app.renderMigrationsPage(w, r, id, source, strings.TrimSpace(r.FormValue("title")), strings.TrimSpace(r.FormValue("sql")), nil,
-			"EXPLAIN hanya tersedia untuk koneksi PostgreSQL.", "")
-		return
-	}
-
 	title := strings.TrimSpace(r.FormValue("title"))
 	sqlText := strings.TrimSpace(r.FormValue("sql"))
 	if title == "" || sqlText == "" {
@@ -223,6 +217,7 @@ func (app *application) migrationExplainHandler(w http.ResponseWriter, r *http.R
 	title := strings.TrimSpace(r.FormValue("title"))
 	sqlText := strings.TrimSpace(r.FormValue("sql"))
 	analyze := r.FormValue("analyze") == "true"
+
 	if migrationID, parseErr := strconv.Atoi(r.FormValue("migration_id")); sqlText == "" && parseErr == nil && migrationID > 0 {
 		user, _ := auth.UserFromContext(r.Context())
 		draft, getErr := app.migService.GetByID(r.Context(), int(user.ID), migrationID)
@@ -231,6 +226,22 @@ func (app *application) migrationExplainHandler(w http.ResponseWriter, r *http.R
 			return
 		}
 		title, sqlText = draft.Title, draft.SQL
+	}
+
+	if source == "mariadb" || source == "mysql" {
+		target, err := app.openTargetMariaDB(r.Context(), id, source)
+		if err != nil {
+			app.renderMigrationsPage(w, r, id, source, title, sqlText, nil, "Failed to open the MariaDB connection.", "")
+			return
+		}
+		defer target.Close()
+		res, err := explain.ExplainMariaDB(r.Context(), target, sqlText, analyze)
+		if err != nil {
+			app.renderMigrationsPage(w, r, id, source, title, sqlText, nil, "MariaDB EXPLAIN failed: "+err.Error(), "")
+			return
+		}
+		app.renderMigrationsPage(w, r, id, source, title, sqlText, res, "", "")
+		return
 	}
 
 	if explain.IsPureDDL(sqlText) {
@@ -259,7 +270,7 @@ func (app *application) migrationExecuteHandler(w http.ResponseWriter, r *http.R
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	
+
 	id, err := strconv.ParseInt(r.FormValue("database_id"), 10, 64)
 	migID, migErr := strconv.Atoi(r.FormValue("migration_id"))
 	if err != nil || id < 1 || migErr != nil || migID < 1 {
@@ -293,13 +304,13 @@ func (app *application) migrationExecuteHandler(w http.ResponseWriter, r *http.R
 	}
 
 	if err != nil {
-		message := "Migration gagal. Periksa status dan pesan error pada riwayat."
+		message := "Migration failed. Check the status and error message in the history."
 		if errors.Is(err, migration.InvalidInput) || errors.Is(err, migration.NotDraft) {
 			message = err.Error()
 		}
 
 		if errors.Is(err, migration.ExecutionPending) || (result != nil && result.Status == migration.S_Running) {
-			message = "Hasil migration perlu diperiksa. Jangan jalankan ulang SQL."
+			message = "The migration result needs to be checked. Do not run the SQL again."
 		}
 		app.renderMigrationsPage(w, r, id, source, "", "", nil, message, "")
 		return
@@ -320,21 +331,7 @@ func (app *application) openTargetMariaDB(ctx context.Context, id int64, source 
 		return nil, err
 	}
 
-	dsn, err := store.MariaDBTargetDSN(connection, encrypted, app.encryptionKeyOrEnv())
-	if err != nil {
-		return nil, err
-	}
-
-	target, err := sql.Open("mysql", dsn)
-	if err != nil {
-		return nil, err
-	}
-	
-	if err := target.PingContext(ctx); err != nil {
-		target.Close()
-		return nil, err
-	}
-	return target, nil
+	return store.OpenMariaDBTarget(ctx, connection, encrypted, app.encryptionKeyOrEnv())
 }
 
 func (app *application) checkMigrationPermission(w http.ResponseWriter, r *http.Request, id int64, source string, action authz.Action) bool {
@@ -343,7 +340,7 @@ func (app *application) checkMigrationPermission(w http.ResponseWriter, r *http.
 	}
 	connection, err := store.GetDatabaseConnection(r.Context(), app.stores.forType(source), id)
 	if err != nil || !connection.IsActive {
-		http.Error(w, "Koneksi database tidak tersedia atau tidak aktif.", http.StatusBadRequest)
+		http.Error(w, "The database connection is unavailable or inactive.", http.StatusBadRequest)
 		return false
 	}
 	return true

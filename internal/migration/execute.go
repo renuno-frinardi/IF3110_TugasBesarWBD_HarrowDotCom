@@ -10,20 +10,16 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-var NotDraft = errors.New("hanya draft yang boleh dijalankan")
-var ExecutionPending = errors.New("hasil migration sebelumnya perlu diperiksa")
+var NotDraft = errors.New("Only draft migrations can be executed")
+var ExecutionPending = errors.New("The previous migration result needs to be checked")
 
-// Nomor pembeda untuk lock fitur migration pada database aplikasi.
-const executionLock = 311016
+const executionLock = 123456
 
-// Execute menjalankan SQL yang tersimpan dalam draft.
-// userID berasal dari session, sedangkan hexKey berasal dari konfigurasi server.
 func (s *Service) Execute(ctx context.Context, userID, migrationID int, hexKey string) (*Migration, error) {
 	if s.store == nil || s.store.pool == nil {
-		return nil, errors.New("koneksi database aplikasi belum siap")
+		return nil, errors.New("The application database connection is not ready")
 	}
 
-	// 1. Periksa migration dan izin pengguna.
 	m, err := s.store.GetByID(ctx, migrationID)
 	if err != nil {
 		return nil, err
@@ -35,32 +31,27 @@ func (s *Service) Execute(ctx context.Context, userID, migrationID int, hexKey s
 		return nil, NotDraft
 	}
 
-	// 2. Pegang lock sampai hasil selesai dicatat. Koneksi ini khusus metadata,
-	// ditutup setelah selesai agar tidak mengembalikan lock ke pool aplikasi.
 	connectCtx, cancelConnect := context.WithTimeout(ctx, 10*time.Second)
 	metadata, err := pgx.ConnectConfig(connectCtx, s.store.pool.Config().ConnConfig)
 	cancelConnect()
 	if err != nil {
-		return nil, errors.New("gagal membuka koneksi untuk mencatat migration")
+		return nil, errors.New("Failed to open a connection to record the migration")
 	}
 	defer closeExecutionConnection(metadata)
 
 	_, err = metadata.Exec(ctx, "SELECT pg_advisory_lock($1, $2)", executionLock, m.DatabaseID)
 	if err != nil {
-		return nil, fmt.Errorf("gagal menunggu giliran migration: %w", err)
+		return nil, fmt.Errorf("Failed to wait for the migration turn: %w", err)
 	}
 
-	// Izin mungkin berubah selama menunggu giliran.
 	if err := s.checkAccess(ctx, userID, m.DatabaseID, true); err != nil {
 		return nil, err
 	}
 
-	// 3. Ubah draft menjadi running, ambil versi dan SQL terbaru secara bersamaan.
 	if err := claimMigration(ctx, metadata, m, userID); err != nil {
 		return nil, err
 	}
 
-	// 4. SQL pengguna hanya dijalankan pada koneksi target.
 	target, err := s.MakeConnection(ctx, userID, m.DatabaseID, hexKey)
 	if err != nil {
 		return saveExecution(metadata, m, S_Failed, err)
@@ -69,25 +60,22 @@ func (s *Service) Execute(ctx context.Context, userID, migrationID int, hexKey s
 
 	status, executionErr := runMigrationSQL(ctx, target, m.SQL)
 
-	// 5. Catat hasil meskipun request pengguna sudah dibatalkan.
 	return saveExecution(metadata, m, status, executionErr)
 }
 
-// Dipanggil setelah lock per database didapatkan.
 func claimMigration(ctx context.Context, metadata *pgx.Conn, m *Migration, userID int) error {
 	tx, err := metadata.Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("gagal menyiapkan riwayat migration: %w", err)
+		return fmt.Errorf("Failed to prepare the migration history: %w", err)
 	}
 	defer rollbackExecution(tx)
 
-	// Running yang tertinggal bisa berarti proses mati atau hasil commit belum jelas.
 	var hasRunning bool
 	err = tx.QueryRow(ctx, `SELECT EXISTS (
 		SELECT 1 FROM migrations WHERE database_id = $1 AND status = 'running'
 	)`, m.DatabaseID).Scan(&hasRunning)
 	if err != nil {
-		return fmt.Errorf("gagal memeriksa migration yang berjalan: %w", err)
+		return fmt.Errorf("Failed to check running migrations: %w", err)
 	}
 	if hasRunning {
 		return ExecutionPending
@@ -110,16 +98,14 @@ func claimMigration(ctx context.Context, metadata *pgx.Conn, m *Migration, userI
 		return NotDraft
 	}
 	if err != nil {
-		return fmt.Errorf("gagal memulai migration: %w", err)
+		return fmt.Errorf("Failed to start the migration: %w", err)
 	}
 
-	// Validasi SQL yang benar-benar diambil saat draft dikunci.
-	// Jika ditolak, rollback metadata menjaga status tetap draft tanpa nomor versi.
 	if err := validateSQL(m.SQL); err != nil {
 		return err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("gagal menyimpan awal migration; periksa riwayat sebelum mencoba lagi: %w", err)
+		return fmt.Errorf("Failed to record the migration start; check the history before trying again: %w", err)
 	}
 	return nil
 }
@@ -127,16 +113,15 @@ func claimMigration(ctx context.Context, metadata *pgx.Conn, m *Migration, userI
 func runMigrationSQL(ctx context.Context, target *pgx.Conn, sql string) (string, error) {
 	tx, err := target.Begin(ctx)
 	if err != nil {
-		return S_Failed, fmt.Errorf("gagal memulai transaksi target: %w", err)
+		return S_Failed, fmt.Errorf("Failed to start the target transaction: %w", err)
 	}
 	defer rollbackExecution(tx)
 
-	// pgx dapat menjalankan seluruh script tanpa memecahnya berdasarkan titik koma.
 	if _, err := tx.Exec(ctx, sql); err != nil {
-		return S_Failed, fmt.Errorf("gagal menjalankan SQL: %w", err)
+		return S_Failed, fmt.Errorf("Failed to execute SQL: %w", err)
 	}
 	if err := ctx.Err(); err != nil {
-		return S_Failed, fmt.Errorf("eksekusi migration dibatalkan: %w", err)
+		return S_Failed, fmt.Errorf("Migration execution was canceled: %w", err)
 	}
 
 	err = tx.Commit(ctx)
@@ -144,20 +129,17 @@ func runMigrationSQL(ctx context.Context, target *pgx.Conn, sql string) (string,
 		return S_Executed, nil
 	}
 
-	// PostgreSQL bisa menolak commit, misalnya karena constraint yang diperiksa
-	// di akhir transaksi. Status I berarti server sudah kembali di luar transaksi.
 	if errors.Is(err, pgx.ErrTxCommitRollback) {
-		return S_Failed, fmt.Errorf("transaksi dibatalkan oleh database: %w", err)
+		return S_Failed, fmt.Errorf("The transaction was rolled back by the database: %w", err)
 	}
 	var databaseErr *pgconn.PgError
 	if errors.As(err, &databaseErr) && databaseErr.Severity == "ERROR" {
 		if !target.IsClosed() && target.PgConn().TxStatus() == 'I' {
-			return S_Failed, fmt.Errorf("commit ditolak oleh database: %w", err)
+			return S_Failed, fmt.Errorf("The commit was rejected by the database: %w", err)
 		}
 	}
 
-	// Koneksi putus saat commit tidak membuktikan bahwa SQL gagal.
-	return S_Running, fmt.Errorf("%w: konfirmasi commit tidak diterima; jangan jalankan SQL ulang", ExecutionPending)
+	return S_Running, fmt.Errorf("%w: commit confirmation was not received; do not run the SQL again", ExecutionPending)
 }
 
 func saveExecution(metadata *pgx.Conn, m *Migration, status string, executionErr error) (*Migration, error) {
@@ -170,7 +152,6 @@ func saveExecution(metadata *pgx.Conn, m *Migration, status string, executionErr
 		message = &text
 	}
 
-	// Salin hasil hanya setelah penyimpanan berhasil.
 	updated := *m
 	query := `UPDATE migrations
 		SET status = $2, error_message = $3, updated_at = clock_timestamp(),
@@ -182,9 +163,9 @@ func saveExecution(metadata *pgx.Conn, m *Migration, status string, executionErr
 	)
 	if err != nil {
 		if status == S_Executed {
-			return m, fmt.Errorf("SQL sudah di-commit, tetapi riwayat belum tersimpan; jangan jalankan ulang: %w", err)
+			return m, fmt.Errorf("SQL was committed, but the history was not saved; do not run it again: %w", err)
 		}
-		return m, fmt.Errorf("hasil migration belum tercatat; periksa riwayat sebelum melanjutkan: %w", err)
+		return m, fmt.Errorf("The migration result was not recorded; check the history before continuing: %w", err)
 	}
 	return &updated, executionErr
 }
@@ -192,7 +173,6 @@ func saveExecution(metadata *pgx.Conn, m *Migration, status string, executionErr
 func rollbackExecution(tx pgx.Tx) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	// Aman dipanggil setelah commit; jika rollback gagal, pgx menutup koneksinya.
 	_ = tx.Rollback(ctx)
 }
 

@@ -7,8 +7,8 @@ import (
 	"strings"
 )
 
-var InvalidInput = errors.New("input tidak valid")
-var Forbidden = errors.New("tidak memiliki akses")
+var InvalidInput = errors.New("Invalid input")
+var Forbidden = errors.New("Access denied")
 
 type Service struct {
 	store  *Store
@@ -28,7 +28,7 @@ func (s *Service) checkAccess(ctx context.Context, userID int, databaseID int, n
 	}
 
 	if s.access == nil {
-		return errors.New("pemeriksaan akses belum dikonfigurasi")
+		return errors.New("Access checks are not configured")
 	}
 
 	allowed, err := s.access.CanAccess(ctx, userID, databaseID, needEdit)
@@ -44,11 +44,11 @@ func (s *Service) checkAccess(ctx context.Context, userID int, databaseID int, n
 
 func isDraftValid(title string, sql string) error {
 	if strings.TrimSpace(title) == "" {
-		return fmt.Errorf("%w: judul harus diisi", InvalidInput)
+		return fmt.Errorf("%w: title is required", InvalidInput)
 	}
 
 	if strings.TrimSpace(sql) == "" {
-		return fmt.Errorf("%w: SQL harus diisi", InvalidInput)
+		return fmt.Errorf("%w: SQL is required", InvalidInput)
 	}
 
 	return nil

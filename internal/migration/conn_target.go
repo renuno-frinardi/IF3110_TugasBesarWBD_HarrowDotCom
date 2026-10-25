@@ -21,7 +21,7 @@ func (s *Service) MakeConnection(ctx context.Context, userID, databaseID int, he
 		return nil, err
 	}
 	if s.store == nil || s.store.pool == nil {
-		return nil, errors.New("koneksi database aplikasi belum siap")
+		return nil, errors.New("The application database connection is not ready")
 	}
 
 	var connection store.DatabaseConnection
@@ -33,16 +33,16 @@ func (s *Service) MakeConnection(ctx context.Context, userID, databaseID int, he
 	err := s.store.pool.QueryRow(ctx, query, databaseID).Scan(&connection.Host, &connection.Port, &connection.DatabaseName,
 		&connection.Username, &encrypted, &connection.DBType, &connection.SSLMode)
 	if err != nil {
-		return nil, fmt.Errorf("gagal mengambil konfigurasi database target: %w", err)
+		return nil, fmt.Errorf("Failed to load the target database configuration: %w", err)
 	}
 
 	if connection.DBType != "postgresql" {
-		return nil, fmt.Errorf("%w: migration hanya mendukung PostgreSQL", InvalidInput)
+		return nil, fmt.Errorf("%w: migration only supports PostgreSQL", InvalidInput)
 	}
 
 	password, err := store.DecryptSecret(encrypted, hexKey)
 	if err != nil {
-		return nil, fmt.Errorf("gagal mendekripsi password database target: %w", err)
+		return nil, fmt.Errorf("Failed to decrypt the target database password: %w", err)
 	}
 
 	config, err := targetConfig(connection, password)
@@ -53,9 +53,9 @@ func (s *Service) MakeConnection(ctx context.Context, userID, databaseID int, he
 	conn, err := pgx.ConnectConfig(ctx, config)
 	if err != nil {
 		if ctx.Err() != nil {
-			return nil, fmt.Errorf("gagal membuka koneksi database target: %w", ctx.Err())
+			return nil, fmt.Errorf("Failed to open the target database connection: %w", ctx.Err())
 		}
-		return nil, errors.New("gagal terhubung ke database target; periksa alamat, username, dan password")
+		return nil, errors.New("Failed to connect to the target database; check the address, username, and password")
 	}
 	return conn, nil
 }
@@ -69,11 +69,11 @@ func targetConfig(connection store.DatabaseConnection, password string) (*pgx.Co
 	params.Set("sslmode", connection.SSLMode)
 	params.Set("connect_timeout", "10")
 
-	// Parser koneksi PostgreSQL membaca spasi sebagai %20.
+	// Parser koneksi PostgreSQL baca space nya %20.
 	query := strings.ReplaceAll(params.Encode(), "+", "%20")
 	config, err := pgx.ParseConfig("postgresql://?" + query)
 	if err != nil {
-		return nil, fmt.Errorf("%w: pengaturan koneksi database target salah", InvalidInput)
+		return nil, fmt.Errorf("%w: invalid target database connection settings", InvalidInput)
 	}
 	config.Password = password
 	return config, nil

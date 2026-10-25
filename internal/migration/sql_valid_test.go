@@ -48,8 +48,8 @@ func TestValidateSQL(t *testing.T) {
 
 	t.Run("posisi_statement_ditolak", func(t *testing.T) {
 		err := validateSQL("SELECT 1; COMMIT;")
-		if err == nil || !strings.Contains(err.Error(), "perintah ke-2") {
-			t.Fatalf("error harus menyebut perintah kedua: %v", err)
+		if err == nil || !strings.Contains(err.Error(), "statement 2") {
+			t.Fatalf("The error must identify the second statement: %v", err)
 		}
 	})
 }

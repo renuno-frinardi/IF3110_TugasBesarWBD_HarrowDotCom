@@ -48,7 +48,7 @@ func (s *Store) GetByID(ctx context.Context, id int) (*Migration, error) {
 		&m.CreatedBy, &m.ExecutedBy, &m.CreatedAt, &m.UpdatedAt, &m.StartTime, &m.FinishTime, &m.ErrorMessage)
 
 	if err != nil {
-		return nil, fmt.Errorf("gagal mengambil migration: %w", err)
+		return nil, fmt.Errorf("Failed to load the migration: %w", err)
 	}
 
 	return m, nil
@@ -64,7 +64,7 @@ func (s *Store) GetByDatabase(ctx context.Context, databaseID int) ([]Migration,
 
 	rows, err := s.pool.Query(ctx, query, databaseID)
 	if err != nil {
-		return nil, fmt.Errorf("gagal mengambil daftar migration: %w", err)
+		return nil, fmt.Errorf("Failed to load the migration list: %w", err)
 	}
 	defer rows.Close()
 
@@ -77,14 +77,14 @@ func (s *Store) GetByDatabase(ctx context.Context, databaseID int) ([]Migration,
 			&m.CreatedAt, &m.UpdatedAt, &m.StartTime, &m.FinishTime, &m.ErrorMessage)
 
 		if err != nil {
-			return nil, fmt.Errorf("gagal membaca data migration: %w", err)
+			return nil, fmt.Errorf("Failed to read migration data: %w", err)
 		}
 
 		migrations = append(migrations, m)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("gagal membaca daftar migration: %w", err)
+		return nil, fmt.Errorf("Failed to read the migration list: %w", err)
 	}
 
 	return migrations, nil
@@ -101,7 +101,7 @@ func (s *Store) Update(ctx context.Context, id int, title string, sql string) (*
 	err := s.pool.QueryRow(ctx, query, title, sql, id).Scan(&m.ID, &m.DatabaseID, &m.Version, &m.Title, &m.SQL, &m.Status, &m.CreatedBy, &m.ExecutedBy, &m.CreatedAt, &m.UpdatedAt, &m.StartTime, &m.FinishTime, &m.ErrorMessage)
 
 	if err != nil {
-		return nil, fmt.Errorf("gagal mengubah draft migration: %w", err)
+		return nil, fmt.Errorf("Failed to update the draft migration: %w", err)
 	}
 	return m, nil
 }
