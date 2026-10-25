@@ -66,10 +66,22 @@ func MariaDBStatements(sqlText string) ([]string, error) {
 func ValidateMariaDBStatements(statements []string) error {
 	for _, statement := range statements {
 		switch strings.ToUpper(strings.Fields(statement)[0]) {
-		case "SELECT", "INSERT", "UPDATE", "DELETE":
+		case "SELECT", "INSERT", "UPDATE", "DELETE",
+			"CREATE", "ALTER", "DROP", "TRUNCATE", "RENAME":
 		default:
-			return errors.New("MariaDB migrations support SELECT, INSERT, UPDATE, and DELETE; CREATE/ALTER/DROP cannot be rolled back")
+			return errors.New("MariaDB migrations support SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, DROP, TRUNCATE, and RENAME")
 		}
 	}
 	return nil
+}
+
+// DDL di MariaDB melakukan implicit commit sehingga tidak bisa di-rollback.
+func HasMariaDBDDL(statements []string) bool {
+	for _, statement := range statements {
+		switch strings.ToUpper(strings.Fields(statement)[0]) {
+		case "CREATE", "ALTER", "DROP", "TRUNCATE", "RENAME":
+			return true
+		}
+	}
+	return false
 }

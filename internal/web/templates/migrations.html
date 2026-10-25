@@ -22,7 +22,7 @@
       {{if eq .Connection.DBType "postgresql"}}
       <p class="muted">Save as a draft migration or preview its PostgreSQL EXPLAIN / EXPLAIN ANALYZE plan (executed inside a rolled-back transaction).</p>
       {{else}}
-      <p class="muted">MariaDB: migration supports SELECT, INSERT, UPDATE, and DELETE on InnoDB tables. CREATE/ALTER/DROP cannot be rolled back. EXPLAIN / ANALYZE supports one SELECT, UPDATE, or DELETE.</p>
+      <p class="muted">MariaDB: DML (SELECT, INSERT, UPDATE, DELETE) runs in a transaction on InnoDB tables. CREATE/ALTER/DROP/TRUNCATE/RENAME are supported but commit immediately and cannot be rolled back. EXPLAIN / ANALYZE supports one SELECT, UPDATE, or DELETE.</p>
       {{end}}
     </div>
     <div class="form-grid">

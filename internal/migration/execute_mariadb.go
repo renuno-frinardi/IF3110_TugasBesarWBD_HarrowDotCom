@@ -104,6 +104,14 @@ func runMariaDBMigrationSQL(ctx context.Context, target *sql.DB, sqlText string)
 	if err := store.ValidateMariaDBStatements(statements); err != nil {
 		return S_Failed, err
 	}
+	if store.HasMariaDBDDL(statements) {
+		for i, statement := range statements {
+			if _, err := target.ExecContext(ctx, statement); err != nil {
+				return S_Failed, fmt.Errorf("MariaDB statement %d failed; DDL cannot be rolled back, so statements 1-%d may already be applied: %w", i+1, i, err)
+			}
+		}
+		return S_Executed, nil
+	}
 	if err := requireTransactionalTables(ctx, target, statements); err != nil {
 		return S_Failed, err
 	}
