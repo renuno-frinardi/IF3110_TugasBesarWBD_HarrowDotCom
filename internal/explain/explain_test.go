@@ -32,10 +32,10 @@ func TestExplainRejectsMultipleStatements(t *testing.T) {
 func TestExplainMariaDBUnsupportedSQL(t *testing.T) {
 	result, err := ExplainMariaDB(nil, nil, "INSERT INTO barang VALUES (3, 'Baju');", false)
 	if err != nil || !result.NotApplicable {
-		t.Fatalf("INSERT harus mendapat keterangan tidak didukung: %v", err)
+		t.Fatalf("INSERT must return an unsupported explanation: %v", err)
 	}
 	_, err = ExplainMariaDB(nil, nil, "SELECT 1; DELETE FROM barang;", true)
 	if err != ErrMultipleStatements {
-		t.Fatalf("beberapa statement harus ditolak: %v", err)
+		t.Fatalf("multiple statements must be rejected: %v", err)
 	}
 }
