@@ -390,6 +390,28 @@ table {
   text-align: left;
 }
 
+.connection-table th:last-child,
+.connection-table td:last-child {
+  width: 190px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.connection-table th:nth-child(2),
+.connection-table td:nth-child(2) {
+  width: 130px;
+}
+
+.connection-table th:nth-child(3),
+.connection-table td:nth-child(3) {
+  width: 190px;
+}
+
+.connection-table th:nth-child(4),
+.connection-table td:nth-child(4) {
+  width: 180px;
+}
+
 th {
   color: var(--muted);
   font-size: 11px;
@@ -408,6 +430,23 @@ td small {
   display: block;
   color: var(--muted);
   margin-top: 2px;
+}
+
+.connection-actions {
+  align-items: center;
+  display: inline-flex;
+  gap: 18px;
+  justify-content: flex-end;
+}
+
+.connection-actions form {
+  margin: 0;
+}
+
+.connection-actions .button {
+  min-width: 122px;
+  justify-content: center;
+  padding: 10px 14px;
 }
 
 .icon-button {

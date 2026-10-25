@@ -28,6 +28,7 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("/connections/new", app.requireAuth(app.requirePermission(authz.ActionPlatformAdmin, nil, app.newConnectionHandler)))
 	mux.HandleFunc("/connections/edit", app.requireAuth(app.requirePermission(authz.ActionPlatformAdmin, nil, app.editConnectionHandler)))
 	mux.HandleFunc("/connections/delete", app.requireAuth(app.requirePermission(authz.ActionPlatformAdmin, nil, app.deleteConnectionHandler)))
+	mux.HandleFunc("/connections/toggle-active", app.requireAuth(app.requirePermission(authz.ActionPlatformAdmin, nil, app.toggleConnectionActiveHandler)))
 	mux.HandleFunc("/connections/test", app.requireAuth(app.requirePermission(authz.ActionPlatformAdmin, nil, app.testConnectionHandler)))
 
 	// Protected migration endpoints (DBView / MigrationCreate / MigrationExecute)

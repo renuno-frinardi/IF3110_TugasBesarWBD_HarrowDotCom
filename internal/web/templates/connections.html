@@ -1,6 +1,6 @@
 {{define "connection-table"}}
 <div class="table-wrap">
-  <table>
+  <table class="connection-table">
     <thead>
       <tr>
         <th>Name</th>
@@ -8,11 +8,11 @@
         <th>Host</th>
         <th>Database</th>
         <th>Status</th>
-        <th></th>
+        <th>Actions</th>
       </tr>
     </thead>
     <tbody>
-      {{range .}}
+      {{range .Connections}}
       <tr>
         <td>
           <a class="table-link" href="/connections/view?id={{.ID}}&source={{.Source}}"
@@ -28,8 +28,21 @@
             >{{if .IsActive}}Active{{else}}Inactive{{end}}</span
           >
         </td>
-        <td>
-          <a class="text-link" href="/connections/view?id={{.ID}}&source={{.Source}}">View</a>
+        <td class="connection-actions-cell">
+          <div class="connection-actions">
+            <a class="text-link" href="/connections/view?id={{.ID}}&source={{.Source}}">View</a>
+            {{if .CanManage}}
+            <form method="post" action="/connections/toggle-active">
+              {{csrfField $.CSRFToken}}
+              <input type="hidden" name="id" value="{{.ID}}" />
+              <input type="hidden" name="source" value="{{.Source}}" />
+              <input type="hidden" name="is_active" value="{{if .IsActive}}false{{else}}true{{end}}" />
+              <button class="button {{if .IsActive}}danger{{else}}secondary{{end}}" type="submit">
+                {{if .IsActive}}Deactivate{{else}}Activate{{end}}
+              </button>
+            </form>
+            {{end}}
+          </div>
         </td>
       </tr>
       {{end}}
@@ -83,7 +96,7 @@
   </form>
   {{if .PostgreSQLConnections}}
   <h2>PostgreSQL connections</h2>
-  {{template "connection-table" .PostgreSQLConnections}}
+  {{template "connection-table" .PostgreSQLTable}}
   {{else}}
   <div class="empty">
     <strong>No PostgreSQL connections</strong>
@@ -92,7 +105,7 @@
   {{end}}
   {{if .MariaDBConnections}}
   <h2>MariaDB connections</h2>
-  {{template "connection-table" .MariaDBConnections}}
+  {{template "connection-table" .MariaDBTable}}
   {{else}}
   <div class="empty">
     <strong>No MariaDB connections</strong>

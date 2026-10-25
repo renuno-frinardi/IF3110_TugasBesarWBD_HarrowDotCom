@@ -17,6 +17,7 @@ import (
 type DatabaseConnection struct {
 	ID           int64
 	Source       string
+	CanManage    bool
 	Name         string
 	Host         string
 	Port         int
@@ -217,6 +218,26 @@ func DeleteDatabaseConnection(ctx context.Context, pool *DB, id int64) error {
 		return fmt.Errorf("Check deleted database connection: %w", err)
 	}
 
+	if rowsAffected == 0 {
+		return fmt.Errorf("Database connection %d not found", id)
+	}
+	return nil
+}
+
+func SetDatabaseConnectionActive(ctx context.Context, pool *DB, id int64, isActive bool) error {
+	result, err := pool.DB.ExecContext(ctx, pool.Rebind(`
+		UPDATE database_connections
+		SET is_active = $1
+		WHERE id = $2
+	`), isActive, id)
+	if err != nil {
+		return fmt.Errorf("Set database connection status: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("Check updated database connection status: %w", err)
+	}
 	if rowsAffected == 0 {
 		return fmt.Errorf("Database connection %d not found", id)
 	}

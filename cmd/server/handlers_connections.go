@@ -35,6 +35,7 @@ func (app *application) listAllowedConnections(ctx context.Context, user *auth.U
 	for _, c := range allPG {
 		_, hasGrant := allowedMap[c.ID]
 		if user.IsAdmin || hasGrant {
+			c.CanManage = user.IsAdmin
 			c.Source = c.DBType
 			if c.Source == "" {
 				c.Source = "postgresql"
@@ -52,6 +53,7 @@ func (app *application) listAllowedConnections(ctx context.Context, user *auth.U
 			for _, c := range allMaria {
 				_, hasGrant := allowedMap[c.ID]
 				if user.IsAdmin || hasGrant {
+					c.CanManage = user.IsAdmin
 					c.Source = "mariadb"
 					if c.DBType == "mariadb" {
 						mariaConns = append(mariaConns, c)
@@ -113,15 +115,23 @@ func (app *application) connectionsHandler(w http.ResponseWriter, r *http.Reques
 	postgresqlConnections = filterConnections(postgresqlConnections, search, typeFilter, statusFilter)
 	mariaDBConnections = filterConnections(mariaDBConnections, search, typeFilter, statusFilter)
 
-	app.renderWithContext(w, r, "connections", pageData{
+	data := pageData{
 		Title:                  "Connections",
 		Active:                 "connections",
 		PostgreSQLConnections:  postgresqlConnections,
 		MariaDBConnections:     mariaDBConnections,
+		PostgreSQLTable:        connectionTableData{Connections: postgresqlConnections},
+		MariaDBTable:           connectionTableData{Connections: mariaDBConnections},
 		ConnectionSearch:       search,
 		ConnectionTypeFilter:   typeFilter,
 		ConnectionStatusFilter: statusFilter,
-	})
+	}
+	if session, ok := auth.SessionFromContext(r.Context()); ok {
+		token := auth.CSRFToken(session)
+		data.PostgreSQLTable.CSRFToken = token
+		data.MariaDBTable.CSRFToken = token
+	}
+	app.renderWithContext(w, r, "connections", data)
 }
 
 func filterConnections(connections []store.DatabaseConnection, search, typeFilter, statusFilter string) []store.DatabaseConnection {
@@ -198,6 +208,10 @@ func (app *application) exploreConnectionHandler(w http.ResponseWriter, r *http.
 	connection, err := store.GetDatabaseConnection(r.Context(), db, id)
 	if err != nil {
 		http.Error(w, "database connection not found", http.StatusNotFound)
+		return
+	}
+	if !connection.IsActive {
+		http.Error(w, "database connection is inactive", http.StatusForbidden)
 		return
 	}
 	if source == "" {
@@ -373,6 +387,28 @@ func (app *application) deleteConnectionHandler(w http.ResponseWriter, r *http.R
 		return
 	}
 	http.Redirect(w, r, "/connections", http.StatusSeeOther)
+}
+
+func (app *application) toggleConnectionActiveHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	id, err := strconv.ParseInt(r.FormValue("id"), 10, 64)
+	if err != nil || id < 1 {
+		http.Error(w, "invalid connection id", http.StatusBadRequest)
+		return
+	}
+
+	isActive := r.FormValue("is_active") == "true"
+	db := app.stores.forType(r.FormValue("source"))
+	if err := store.SetDatabaseConnectionActive(r.Context(), db, id, isActive); err != nil {
+		http.Error(w, "unable to update database connection status", http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, "/connections/view?id="+strconv.FormatInt(id, 10)+"&source="+url.QueryEscape(r.FormValue("source")), http.StatusSeeOther)
 }
 
 func (app *application) editConnectionHandler(w http.ResponseWriter, r *http.Request) {

@@ -35,16 +35,27 @@
     </div>
   </div>
   <div class="form-actions">
+    {{if .Connection.IsActive}}
     <a class="button primary" href="/connections/explore?id={{.Connection.ID}}&source={{.Connection.Source}}"
       >Explore data</a
     >
     <a class="button secondary" href="/connections/migrations?id={{.Connection.ID}}&source={{.Connection.Source}}"
       >Migrations</a
     >
+    {{end}}
     {{if .IsAdmin}}
     <a class="button secondary" href="/connections/edit?id={{.Connection.ID}}&source={{.Connection.Source}}"
       >Edit connection</a
     >
+    <form method="post" action="/connections/toggle-active" style="margin:0;">
+      {{csrfField .CSRFToken}}
+      <input type="hidden" name="id" value="{{.Connection.ID}}" />
+      <input type="hidden" name="source" value="{{.Connection.Source}}" />
+      <input type="hidden" name="is_active" value="{{if .Connection.IsActive}}false{{else}}true{{end}}" />
+      <button class="button {{if .Connection.IsActive}}danger{{else}}secondary{{end}}" type="submit">
+        {{if .Connection.IsActive}}Deactivate connection{{else}}Activate connection{{end}}
+      </button>
+    </form>
     <form
       method="post"
       action="/connections/delete"

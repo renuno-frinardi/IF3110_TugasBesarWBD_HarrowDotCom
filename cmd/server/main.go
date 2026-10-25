@@ -34,6 +34,8 @@ type pageData struct {
 	Connections            []store.DatabaseConnection
 	PostgreSQLConnections  []store.DatabaseConnection
 	MariaDBConnections     []store.DatabaseConnection
+	PostgreSQLTable        connectionTableData
+	MariaDBTable           connectionTableData
 	Connection             store.DatabaseConnection
 	FormConnection         store.CreateDatabaseConnectionInput
 	FormPassword           string
@@ -57,6 +59,11 @@ type dashboardStats struct {
 	Users       int
 	Groups      int
 	AuditLogs   int
+}
+
+type connectionTableData struct {
+	Connections []store.DatabaseConnection
+	CSRFToken   string
 }
 
 type appStores struct {
