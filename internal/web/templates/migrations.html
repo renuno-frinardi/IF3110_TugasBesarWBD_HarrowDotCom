@@ -18,8 +18,12 @@
     <input type="hidden" name="database_id" value="{{.Connection.ID}}" />
     <input type="hidden" name="source" value="{{.Connection.Source}}" />
     <div class="form-section">
-      <h2>Create draft migration &amp; analyze execution plan</h2>
+      <h2>Create draft migration</h2>
+      {{if eq .Connection.DBType "postgresql"}}
       <p class="muted">Save as a draft migration or preview its PostgreSQL EXPLAIN / EXPLAIN ANALYZE plan (executed inside a rolled-back transaction).</p>
+      {{else}}
+      <p class="muted">MariaDB: migration supports SELECT, INSERT, UPDATE, and DELETE on InnoDB tables. CREATE/ALTER/DROP cannot be rolled back. EXPLAIN / ANALYZE supports one SELECT, UPDATE, or DELETE.</p>
+      {{end}}
     </div>
     <div class="form-grid">
       <label>Migration title
@@ -31,7 +35,7 @@
     </div>
     <div class="form-actions">
       <button class="button secondary" type="submit" formaction="/connections/migrations/explain" name="analyze" value="false">EXPLAIN</button>
-      <button class="button secondary" type="submit" formaction="/connections/migrations/explain" name="analyze" value="true">EXPLAIN ANALYZE (Rollback)</button>
+      <button class="button secondary" type="submit" formaction="/connections/migrations/explain" name="analyze" value="true">{{if eq .Connection.DBType "postgresql"}}EXPLAIN ANALYZE{{else}}ANALYZE{{end}} (Rollback)</button>
       <button class="button primary" type="submit">Save draft migration</button>
     </div>
   </form>
@@ -43,7 +47,7 @@
   <div class="panel-heading">
     <div>
       <p class="eyebrow">Query Execution Plan</p>
-      <h2>{{if .ExplainResult.Analyze}}EXPLAIN ANALYZE (Rolled Back){{else}}EXPLAIN{{end}}</h2>
+      <h2>{{if .ExplainResult.Analyze}}{{if eq .Connection.DBType "postgresql"}}EXPLAIN ANALYZE{{else}}ANALYZE{{end}}{{if not .ExplainResult.NotApplicable}} (Rolled Back){{end}}{{else}}EXPLAIN{{end}}</h2>
     </div>
     <span class="badge {{if .ExplainResult.NotApplicable}}gray{{else}}green{{end}}">
       {{if .ExplainResult.NotApplicable}}tidak berlaku{{else}}Plan generated{{end}}
@@ -60,7 +64,7 @@
       <tbody>
         {{range .ExplainResult.PlanLines}}
         <tr>
-          <td>{{.}}</td>
+          <td style="white-space: pre-wrap; font-family: monospace;">{{.}}</td>
         </tr>
         {{end}}
       </tbody>
@@ -127,14 +131,6 @@
                 <input type="hidden" name="source" value="{{$.Connection.Source}}" />
                 <input type="hidden" name="migration_id" value="{{.ID}}" />
                 <button class="button primary" type="submit">Execute</button>
-              </form>
-              <form method="post" action="/connections/migrations/explain" style="margin:0;">
-                {{csrfField $.CSRFToken}}
-                <input type="hidden" name="database_id" value="{{$.Connection.ID}}" />
-                <input type="hidden" name="source" value="{{$.Connection.Source}}" />
-                <input type="hidden" name="migration_id" value="{{.ID}}" />
-                <button class="button secondary" type="submit" name="analyze" value="false">EXPLAIN</button>
-                <button class="button secondary" type="submit" name="analyze" value="true">EXPLAIN ANALYZE</button>
               </form>
             </div>
             {{else}}

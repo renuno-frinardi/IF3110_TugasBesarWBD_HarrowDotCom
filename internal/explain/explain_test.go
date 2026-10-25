@@ -28,3 +28,14 @@ func TestExplainRejectsMultipleStatements(t *testing.T) {
 		t.Fatalf("ExplainPostgres error = %v, want %v", err, ErrMultipleStatements)
 	}
 }
+
+func TestExplainMariaDBUnsupportedSQL(t *testing.T) {
+	result, err := ExplainMariaDB(nil, nil, "INSERT INTO barang VALUES (3, 'Baju');", false)
+	if err != nil || !result.NotApplicable {
+		t.Fatalf("INSERT harus mendapat keterangan tidak didukung: %v", err)
+	}
+	_, err = ExplainMariaDB(nil, nil, "SELECT 1; DELETE FROM barang;", true)
+	if err != ErrMultipleStatements {
+		t.Fatalf("beberapa statement harus ditolak: %v", err)
+	}
+}

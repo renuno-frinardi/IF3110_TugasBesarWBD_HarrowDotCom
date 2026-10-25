@@ -45,21 +45,6 @@ func (app *application) listAllowedConnections(ctx context.Context, user *auth.U
 		}
 	}
 
-	if app.stores.mariaDB != nil {
-		if allMaria, mErr := store.ListDatabaseConnections(ctx, app.stores.mariaDB); mErr == nil {
-			for _, c := range allMaria {
-				level, accessErr := app.dbAuthorizer.EffectiveDatabaseAccessForSource(ctx, user.ID, c.ID, "mariadb")
-				hasGrant := accessErr == nil && level != authz.LevelNone
-				if user.IsAdmin || hasGrant {
-					c.CanManage = user.IsAdmin
-					c.Source = "mariadb"
-					if c.DBType == "mariadb" {
-						mariaConns = append(mariaConns, c)
-					}
-				}
-			}
-		}
-	}
 	return pgConns, mariaConns, nil
 }
 
@@ -817,7 +802,7 @@ func (app *application) deleteConnectionHandler(w http.ResponseWriter, r *http.R
 		http.Error(w, "invalid connection id", http.StatusBadRequest)
 		return
 	}
-	
+
 	db := app.stores.forType(r.FormValue("source"))
 	if err := store.DeleteDatabaseConnection(r.Context(), db, id); err != nil {
 		http.Error(w, "unable to delete database connection", http.StatusInternalServerError)

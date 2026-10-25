@@ -8,9 +8,12 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
+	"strconv"
 	"time"
 
+	"github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -120,9 +123,16 @@ func MariaDBTargetDSN(connection DatabaseConnection, encryptedPassword []byte, h
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?multiStatements=true&parseTime=true",
-		url.QueryEscape(connection.Username), url.QueryEscape(password),
-		connection.Host, connection.Port, url.QueryEscape(connection.DatabaseName)), nil
+	config := mysql.NewConfig()
+	config.User = connection.Username
+	config.Passwd = password
+	config.Net = "tcp"
+	config.Addr = net.JoinHostPort(connection.Host, strconv.Itoa(connection.Port))
+	config.DBName = connection.DatabaseName
+	config.TLSConfig = mariaDBTLSConfig(connection.SSLMode)
+	config.ParseTime = true
+	config.Timeout = 10 * time.Second
+	return config.FormatDSN(), nil
 }
 
 func ListDatabaseConnections(ctx context.Context, pool *DB) ([]DatabaseConnection, error) {

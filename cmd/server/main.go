@@ -69,14 +69,11 @@ type connectionTableData struct {
 
 type appStores struct {
 	postgres *store.DB
-	mariaDB  *store.DB
 	pgPool   *pgxpool.Pool
 }
 
+// Konfigurasi semua koneksi disimpan bersama izin dan riwayat di PostgreSQL.
 func (s *appStores) forType(dbType string) *store.DB {
-	if (dbType == "mariadb" || dbType == "mysql") && s.mariaDB != nil {
-		return s.mariaDB
-	}
 	return s.postgres
 }
 
@@ -152,24 +149,7 @@ func main() {
 	}
 	defer pgPool.Close()
 
-	var mariaDB *store.DB
-	mariaURL := envOrDefault("MARIADB_DATABASE_URL", store.MariaDBAppURL(
-		envOrDefault("MARIADB_HOST", "localhost"), envIntOrDefault("MARIADB_PORT", 3307),
-		envOrDefault("MARIADB_DATABASE", "harrow_db"), envOrDefault("MARIADB_USER", "harrow"),
-		os.Getenv("MARIADB_PASSWORD"),
-	))
-	if mdb, err := store.OpenDB(ctx, "mariadb", mariaURL); err == nil {
-		if migErr := store.RunMigrations(ctx, mdb); migErr != nil {
-			mdb.Close()
-			log.Fatalf("Failed to run MariaDB migrations: %v", migErr)
-		}
-		mariaDB = mdb
-		defer mariaDB.Close()
-	} else {
-		logger.Printf("MariaDB internal store unavailable, continuing with PostgreSQL platform store: %v", err)
-	}
-
-	stores := &appStores{postgres: postgresDB, mariaDB: mariaDB, pgPool: pgPool}
+	stores := &appStores{postgres: postgresDB, pgPool: pgPool}
 	sessMgr := auth.NewSessionManager(auth.NewPostgresSessionStore(postgresDB.DB), auth.DefaultSessionConfig())
 	authSvc, err := auth.NewService(postgresDB.DB, sessMgr)
 	if err != nil {

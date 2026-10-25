@@ -9,7 +9,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -72,22 +71,11 @@ func ListPostgresSchemas(ctx context.Context, target *pgxpool.Pool) ([]string, e
 }
 
 func OpenMariaDBTarget(ctx context.Context, connection DatabaseConnection, encryptedPassword []byte, hexKey string) (*sql.DB, error) {
-	password, err := DecryptSecret(encryptedPassword, hexKey)
+	dsn, err := MariaDBTargetDSN(connection, encryptedPassword, hexKey)
 	if err != nil {
 		return nil, err
 	}
-
-	config := mysql.Config{
-		User:                 connection.Username,
-		Passwd:               password,
-		Net:                  "tcp",
-		Addr:                 fmt.Sprintf("%s:%d", connection.Host, connection.Port),
-		DBName:               connection.DatabaseName,
-		TLSConfig:            mariaDBTLSConfig(connection.SSLMode),
-		AllowNativePasswords: true,
-	}
-
-	target, err := sql.Open("mysql", config.FormatDSN())
+	target, err := sql.Open("mysql", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("Create target MariaDB connection: %w", err)
 	}
@@ -200,10 +188,29 @@ func ReadMariaDBTable(ctx context.Context, target *sql.DB, schema, table string,
 		page = 1
 	}
 
+	keys, err := target.QueryContext(ctx, `SELECT COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE
+		WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND CONSTRAINT_NAME = 'PRIMARY'
+		ORDER BY ORDINAL_POSITION`, schema, table)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	primaryKey, err := scanSingleStringColumn(keys, "primary key")
+	keys.Close()
+	if err != nil {
+		return nil, nil, false, err
+	}
+	orderBy := ""
+	for i := range primaryKey {
+		primaryKey[i] = quoteMariaDBIdentifier(primaryKey[i])
+	}
+	if len(primaryKey) > 0 {
+		orderBy = " ORDER BY " + strings.Join(primaryKey, ", ")
+	}
+
 	const pageSize = 50
 	rows, err := target.QueryContext(ctx, fmt.Sprintf(
-		"SELECT * FROM %s.%s LIMIT %d OFFSET %d",
-		quoteMariaDBIdentifier(schema), quoteMariaDBIdentifier(table), pageSize+1, (page-1)*pageSize,
+		"SELECT * FROM %s.%s%s LIMIT %d OFFSET %d",
+		quoteMariaDBIdentifier(schema), quoteMariaDBIdentifier(table), orderBy, pageSize+1, (page-1)*pageSize,
 	))
 
 	if err != nil {
@@ -387,10 +394,39 @@ func ReadPostgresTableWithRowIDs(ctx context.Context, target *pgxpool.Pool, sche
 		page = 1
 	}
 
+	keys, err := target.Query(ctx, `SELECT a.attname
+		FROM pg_index i
+		JOIN pg_class t ON t.oid = i.indrelid
+		JOIN pg_namespace n ON n.oid = t.relnamespace
+		JOIN LATERAL unnest(i.indkey) WITH ORDINALITY k(attnum, position) ON true
+		JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum
+		WHERE n.nspname = $1 AND t.relname = $2 AND i.indisprimary AND k.position <= i.indnkeyatts
+		ORDER BY k.position`, schema, table)
+	if err != nil {
+		return nil, nil, nil, false, err
+	}
+	var primaryKey []string
+	for keys.Next() {
+		var column string
+		if err := keys.Scan(&column); err != nil {
+			keys.Close()
+			return nil, nil, nil, false, err
+		}
+		primaryKey = append(primaryKey, quoteIdentifier(column))
+	}
+	keys.Close()
+	if err := keys.Err(); err != nil {
+		return nil, nil, nil, false, err
+	}
+	orderBy := "ctid"
+	if len(primaryKey) > 0 {
+		orderBy = strings.Join(primaryKey, ", ")
+	}
+
 	const pageSize = 50
 	rows, err := target.Query(ctx, fmt.Sprintf(
-		"SELECT ctid::text, * FROM %s.%s LIMIT %d OFFSET %d",
-		quoteIdentifier(schema), quoteIdentifier(table), pageSize+1, (page-1)*pageSize,
+		"SELECT ctid::text, * FROM %s.%s ORDER BY %s LIMIT %d OFFSET %d",
+		quoteIdentifier(schema), quoteIdentifier(table), orderBy, pageSize+1, (page-1)*pageSize,
 	))
 
 	if err != nil {
@@ -758,4 +794,3 @@ func DeleteMariaDBRow(ctx context.Context, target *sql.DB, schema, table string,
 	_, err := target.ExecContext(ctx, query, args...)
 	return err
 }
-

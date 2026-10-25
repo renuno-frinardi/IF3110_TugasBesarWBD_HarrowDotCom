@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/store"
 )
 
 // menjalankan migration SQL pada db MariaDB
@@ -93,21 +94,33 @@ func claimMigrationWithoutPostgresValidation(ctx context.Context, metadata *pgx.
 }
 
 func runMariaDBMigrationSQL(ctx context.Context, target *sql.DB, sqlText string) (string, error) {
+	statements, err := store.MariaDBStatements(sqlText)
+	if err != nil {
+		return S_Failed, err
+	}
+	if err := store.ValidateMariaDBStatements(statements); err != nil {
+		return S_Failed, err
+	}
 	tx, err := target.BeginTx(ctx, nil)
 	if err != nil {
 		return S_Failed, fmt.Errorf("Gagal memulai transaksi target MariaDB: %w", err)
 	}
 
-	if _, err := tx.ExecContext(ctx, sqlText); err != nil {
-		_ = tx.Rollback()
-		return S_Failed, fmt.Errorf("Gagal menjalankan SQL MariaDB (rollback best effort): %w", err)
+	defer tx.Rollback()
+	for _, statement := range statements {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			if rollbackErr := tx.Rollback(); rollbackErr != nil {
+				return S_Running, fmt.Errorf("%w: rollback MariaDB belum dapat dipastikan", ExecutionPending)
+			}
+			return S_Failed, fmt.Errorf("SQL MariaDB gagal, perubahan dibatalkan: %w", err)
+		}
 	}
 
 	if err := ctx.Err(); err != nil {
 		_ = tx.Rollback()
 		return S_Failed, fmt.Errorf("Eksekusi migration dibatalkan: %w", err)
 	}
-	
+
 	if err := tx.Commit(); err != nil {
 		return S_Running, fmt.Errorf("%w: konfirmasi commit MariaDB tidak diterima; jangan jalankan SQL ulang", ExecutionPending)
 	}
