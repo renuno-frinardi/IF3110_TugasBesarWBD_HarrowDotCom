@@ -42,7 +42,7 @@
           type="number"
           min="1"
           max="65535"
-          value="{{if gt .FormConnection.Port 0}}{{.FormConnection.Port}}{{else}}5432{{end}}"
+          value="{{if gt .FormConnection.Port 0}}{{.FormConnection.Port}}{{else}}5433{{end}}"
           required /></label
       ><label
         >Database name<input
@@ -82,11 +82,11 @@
   </form>
 </section>
 <script>
-  document.getElementById("database-type").addEventListener("change", function () {
-    const port = document.getElementById("database-port");
-    if (port.value === "5432" || port.value === "3306") {
-      port.value = this.value === "mariadb" ? "3306" : "5432";
-    }
+  const databaseType = document.getElementById("database-type");
+  const databasePort = document.getElementById("database-port");
+
+  databaseType.addEventListener("change", function () {
+    databasePort.value = this.value === "mariadb" || this.value === "mysql" ? "3307" : "5433";
   });
 </script>
 {{end}}
