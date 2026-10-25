@@ -1,0 +1,119 @@
+{{define "content"}}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Overview</p>
+    <h1>Hello, {{if .CurrentUser}}{{.CurrentUser.Username}}{{else}}User{{end}}</h1>
+    <p class="muted">Monitor your database workspace from one place</p>
+  </div>
+  {{if .IsAdmin}}
+  <a class="button primary" href="/connections/new"
+    >Add connection <span>＋</span></a
+  >
+  {{end}}
+</section>
+<section class="stats">
+  <div class="stat-card">
+    <span class="stat-label">Database connections</span
+    ><strong>{{.Stats.Connections}}</strong
+    ><span class="stat-note">Registered targets</span>
+  </div>
+  <div class="stat-card">
+    <span class="stat-label">Platform users</span
+    ><strong>{{.Stats.Users}}</strong
+    ><span class="stat-note">Active workspace users</span>
+  </div>
+  <div class="stat-card">
+    <span class="stat-label">Groups</span><strong>{{.Stats.Groups}}</strong
+    ><span class="stat-note">Access groups</span>
+  </div>
+  <div class="stat-card">
+    <span class="stat-label">Audit events</span
+    ><strong>{{.Stats.AuditLogs}}</strong
+    ><span class="stat-note">Recorded activities</span>
+  </div>
+</section>
+
+{{if .EditableConnections}}
+<section class="panel" style="margin-bottom: 24px;">
+  <div class="panel-heading">
+    <div>
+      <p class="eyebrow">Data modification access (View + Edit)</p>
+      <h2>Modify database entries &amp; migrations</h2>
+      <p class="muted">You have write permissions on these databases to visually add/edit table rows or run migrations.</p>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Database</th>
+          <th>Type</th>
+          <th>Host</th>
+          <th>Access Level</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .EditableConnections}}
+        <tr>
+          <td>
+            <strong>{{.Name}}</strong>
+            <small>{{.DatabaseName}}</small>
+          </td>
+          <td>{{.DBType}}</td>
+          <td>{{.Host}}:{{.Port}}</td>
+          <td><span class="badge green">View + Edit</span></td>
+          <td>
+            <div class="toolbar" style="margin-bottom:0; gap:8px; justify-content:flex-start;">
+              {{if .IsActive}}
+              <a class="button primary" href="/connections/explore?id={{.ID}}&source={{.Source}}">Visual Data Editor</a>
+              <a class="button secondary" href="/connections/migrations?id={{.ID}}&source={{.Source}}">SQL Migrations</a>
+              {{else}}
+              <span class="badge gray">Connection Inactive</span>
+              {{end}}
+            </div>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</section>
+{{end}}
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <p class="eyebrow">Quick access</p>
+      <h2>Database connections</h2>
+    </div>
+    <a class="text-link" href="/connections">View all →</a>
+  </div>
+  {{if .Connections}}
+  <div class="connection-grid">
+    {{range .Connections}}
+    <a class="connection-card" href="/connections/view?id={{.ID}}&source={{.Source}}">
+      <div class="connection-icon">
+        {{if eq .DBType "postgresql"}}PG{{else}}DB{{end}}
+      </div>
+      <div>
+        <h3>{{.Name}}</h3>
+        <p>{{.Host}}:{{.Port}} · {{.DatabaseName}}</p>
+      </div>
+      <span class="badge {{if .IsActive}}green{{else}}gray{{end}}"
+        >{{if .IsActive}}Active{{else}}Inactive{{end}}</span
+      >
+    </a>
+    {{end}}
+  </div>
+  {{else}}
+  <div class="empty">
+    <strong>No connections yet</strong>
+    <p>Add your first database connection to get started</p>
+    {{if .IsAdmin}}
+    <a class="button secondary" href="/connections/new">Add connection</a>
+    {{end}}
+  </div>
+  {{end}}
+</section>
+{{end}}

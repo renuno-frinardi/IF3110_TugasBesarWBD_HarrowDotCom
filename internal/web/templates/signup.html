@@ -1,0 +1,62 @@
+{{define "content"}}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Authentication</p>
+    <h1>Create a Harrow account</h1>
+    <p class="muted">Register a new workspace account. Database access permissions will be assigned by a Platform Admin.</p>
+  </div>
+</section>
+<section class="panel form-panel">
+  <form method="post" action="/signup">
+    <div class="form-section">
+      <h2>Account details</h2>
+      <p class="muted">New accounts start without administrative or database privileges until added to an access group.</p>
+    </div>
+    <div class="form-grid">
+      <label>Username
+        <input
+          name="username"
+          required
+          maxlength="50"
+          autocomplete="username"
+          autofocus
+          placeholder="johndoe"
+        />
+      </label>
+      <label>Email (optional)
+        <input
+          name="email"
+          type="email"
+          maxlength="100"
+          autocomplete="email"
+          placeholder="john@example.com"
+        />
+      </label>
+      <label>Password (min. 8 characters)
+        <input
+          name="password"
+          type="password"
+          required
+          minlength="8"
+          autocomplete="new-password"
+          placeholder="••••••••"
+        />
+      </label>
+      <label>Confirm password
+        <input
+          name="confirm_password"
+          type="password"
+          required
+          minlength="8"
+          autocomplete="new-password"
+          placeholder="••••••••"
+        />
+      </label>
+    </div>
+    <div class="form-actions">
+      <button class="button primary" type="submit">Create account</button>
+      <a class="button secondary" href="/login">Already have an account? Sign in</a>
+    </div>
+  </form>
+</section>
+{{end}}

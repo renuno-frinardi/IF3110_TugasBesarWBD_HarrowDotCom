@@ -1,0 +1,153 @@
+{{define "content"}}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Workspace / Connections / Migrations</p>
+    <h1>{{.Connection.Name}} · Migrations</h1>
+    <p class="muted">Linear schema &amp; data migration history, transactional execution, and query execution plan analysis.</p>
+  </div>
+  <div class="toolbar" style="margin:0;">
+    <a class="button secondary" href="/connections/view?id={{.Connection.ID}}&source={{.Connection.Source}}">Back to details</a>
+    <a class="button secondary" href="/connections/explore?id={{.Connection.ID}}&source={{.Connection.Source}}">Explore data</a>
+  </div>
+</section>
+
+{{if .CanEditMigration}}
+<section class="panel form-panel" style="margin-bottom: 24px;">
+  <form method="post" action="/connections/migrations/create">
+    {{csrfField .CSRFToken}}
+    <input type="hidden" name="database_id" value="{{.Connection.ID}}" />
+    <input type="hidden" name="source" value="{{.Connection.Source}}" />
+    <div class="form-section">
+      <h2>Create draft migration</h2>
+      {{if eq .Connection.DBType "postgresql"}}
+      <p class="muted">Save as a draft migration or preview its PostgreSQL EXPLAIN / EXPLAIN ANALYZE plan (executed inside a rolled-back transaction).</p>
+      {{else}}
+      <p class="muted">MariaDB: DML (SELECT, INSERT, UPDATE, DELETE) runs in a transaction on InnoDB tables. CREATE/ALTER/DROP/TRUNCATE/RENAME are supported but commit immediately and cannot be rolled back. EXPLAIN / ANALYZE supports one SELECT, UPDATE, or DELETE.</p>
+      {{end}}
+    </div>
+    <div class="form-grid">
+      <label>Migration title
+        <input name="title" required maxlength="150" value="{{.DraftTitle}}" placeholder="Add index on orders(created_at)" />
+      </label>
+      <label>SQL statement
+        <input name="sql" required value="{{.DraftSQL}}" placeholder="SELECT * FROM users;" />
+      </label>
+    </div>
+    <div class="form-actions">
+      <button class="button secondary" type="submit" formaction="/connections/migrations/explain" name="analyze" value="false">EXPLAIN</button>
+      <button class="button secondary" type="submit" formaction="/connections/migrations/explain" name="analyze" value="true">{{if eq .Connection.DBType "postgresql"}}EXPLAIN ANALYZE{{else}}ANALYZE{{end}} (Rollback)</button>
+      <button class="button primary" type="submit">Save draft migration</button>
+    </div>
+  </form>
+</section>
+{{end}}
+
+{{if .ExplainResult}}
+<section class="panel" style="margin-bottom: 24px;">
+  <div class="panel-heading">
+    <div>
+      <p class="eyebrow">Query Execution Plan</p>
+      <h2>{{if .ExplainResult.Analyze}}{{if eq .Connection.DBType "postgresql"}}EXPLAIN ANALYZE{{else}}ANALYZE{{end}}{{if not .ExplainResult.NotApplicable}} (Rolled Back){{end}}{{else}}EXPLAIN{{end}}</h2>
+    </div>
+    <span class="badge {{if .ExplainResult.NotApplicable}}gray{{else}}green{{end}}">
+      {{if .ExplainResult.NotApplicable}}Not applicable{{else}}Plan generated{{end}}
+    </span>
+  </div>
+  <p class="muted">SQL: <strong>{{.ExplainResult.SQL}}</strong></p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Execution Plan Output</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .ExplainResult.PlanLines}}
+        <tr>
+          <td style="white-space: pre-wrap; font-family: monospace;">{{.}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</section>
+{{end}}
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <p class="eyebrow">History</p>
+      <h2>Database migrations</h2>
+    </div>
+    <span class="badge {{if .CanEditMigration}}green{{else}}gray{{end}}">
+      {{if .CanEditMigration}}View + Edit{{else}}View Only{{end}}
+    </span>
+  </div>
+  {{if .Migrations}}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Version</th>
+          <th>Title</th>
+          <th>SQL</th>
+          <th>Status</th>
+          <th>Created</th>
+          <th>Executed by</th>
+          <th>Started</th>
+          <th>Finished</th>
+          <th>Error</th>
+          {{if .CanEditMigration}}<th>Actions</th>{{end}}
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Migrations}}
+        <tr>
+          <td>{{if .Version}}v{{derefInt .Version}}{{else}}<span class="muted">Draft</span>{{end}}</td>
+          <td><strong>{{.Title}}</strong></td>
+          <td><small>{{.SQL}}</small></td>
+          <td>
+            <span class="badge {{if eq .Status "executed"}}green{{else}}gray{{end}}">{{.Status}}</span>
+          </td>
+          <td>{{formatTime .CreatedAt}}</td>
+          <td>{{if .ExecutedByName}}{{derefString .ExecutedByName}}{{else if .ExecutedBy}}User #{{derefInt .ExecutedBy}}{{else}}-{{end}}</td>
+          <td>{{formatTimePtr .StartTime}}</td>
+          <td>{{formatTimePtr .FinishTime}}</td>
+          <td>{{if .ErrorMessage}}<small>{{derefString .ErrorMessage}}</small>{{else}}-{{end}}</td>
+          {{if $.CanEditMigration}}
+          <td>
+            {{if eq .Status "draft"}}
+            <div class="toolbar" style="margin:0;">
+              <form method="post" action="/connections/migrations/update" class="toolbar" style="margin:0;">
+                {{csrfField $.CSRFToken}}
+                <input type="hidden" name="database_id" value="{{$.Connection.ID}}" />
+                <input type="hidden" name="source" value="{{$.Connection.Source}}" />
+                <input type="hidden" name="migration_id" value="{{.ID}}" />
+                <label>Title
+                  <input name="title" required value="{{.Title}}" />
+                </label>
+                <label>SQL
+                  <input name="sql" required value="{{.SQL}}" />
+                </label>
+                <button class="button secondary" type="submit">Update draft</button>
+                <button class="button primary" type="submit" formaction="/connections/migrations/execute" onclick="return confirm('Save the SQL shown here and execute it now?')">Save &amp; Execute</button>
+              </form>
+            </div>
+            {{else}}
+            <span class="muted">Locked</span>
+            {{end}}
+          </td>
+          {{end}}
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{else}}
+  <div class="empty">
+    <strong>No migrations recorded</strong>
+    <p>Create a draft migration to track schema or data changes on this database.</p>
+  </div>
+  {{end}}
+</section>
+{{end}}
