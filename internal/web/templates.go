@@ -27,9 +27,24 @@ func templateFuncs() template.FuncMap {
 			if value == "" {
 				return "?"
 			}
-			
+
 			runeValue, _ := utf8.DecodeRuneInString(value)
 			return strings.ToUpper(string(runeValue))
+		},
+		"csrfField": func(token string) template.HTML {
+			return template.HTML(`<input type="hidden" name="csrf_token" value="` + template.HTMLEscapeString(token) + `" />`)
+		},
+		"derefInt": func(value *int) int {
+			if value == nil {
+				return 0
+			}
+			return *value
+		},
+		"derefString": func(value *string) string {
+			if value == nil {
+				return ""
+			}
+			return *value
 		},
 	}
 }
