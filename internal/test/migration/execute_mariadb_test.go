@@ -24,7 +24,7 @@ func TestMariaDBExecution(t *testing.T) {
 	if !strings.HasSuffix(name, "_test") {
 		t.Fatal("gunakan database dengan akhiran _test")
 	}
-	env, err := godotenv.Read("../../.env")
+	env, err := godotenv.Read("../../../.env")
 	if err != nil {
 		t.Fatal(err)
 	}

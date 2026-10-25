@@ -331,7 +331,7 @@ func TestCreateDraft(t *testing.T) {
 func openTestDatabase(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 
-	if err := godotenv.Load("../../.env"); err != nil {
+	if err := godotenv.Load("../../../.env"); err != nil {
 		t.Fatal("gagal membaca file .env")
 	}
 

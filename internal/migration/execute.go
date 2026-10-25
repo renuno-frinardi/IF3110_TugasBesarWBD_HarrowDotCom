@@ -105,7 +105,7 @@ func claimMigration(ctx context.Context, metadata *pgx.Conn, m *Migration, userI
 		return err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("Failed to record the migration start; check the history before trying again: %w", err)
+		return fmt.Errorf("Failed to record the migration start, check the history before trying again: %w", err)
 	}
 	return nil
 }
@@ -139,7 +139,7 @@ func runMigrationSQL(ctx context.Context, target *pgx.Conn, sql string) (string,
 		}
 	}
 
-	return S_Running, fmt.Errorf("%w: commit confirmation was not received; do not run the SQL again", ExecutionPending)
+	return S_Running, fmt.Errorf("%w: commit confirmation was not received, do not run the SQL again", ExecutionPending)
 }
 
 func saveExecution(metadata *pgx.Conn, m *Migration, status string, executionErr error) (*Migration, error) {
@@ -163,9 +163,9 @@ func saveExecution(metadata *pgx.Conn, m *Migration, status string, executionErr
 	)
 	if err != nil {
 		if status == S_Executed {
-			return m, fmt.Errorf("SQL was committed, but the history was not saved; do not run it again: %w", err)
+			return m, fmt.Errorf("SQL was committed, but the history was not saved, do not run it again: %w", err)
 		}
-		return m, fmt.Errorf("The migration result was not recorded; check the history before continuing: %w", err)
+		return m, fmt.Errorf("The migration result was not recorded, check the history before continuing: %w", err)
 	}
 	return &updated, executionErr
 }

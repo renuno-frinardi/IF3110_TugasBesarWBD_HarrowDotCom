@@ -12,7 +12,7 @@ func MariaDBStatements(sqlText string) ([]string, error) {
 	for i := 0; i < len(sqlText); i++ {
 		c := sqlText[i]
 		if c == '\\' {
-			return nil, errors.New("Backslashes are not supported; use two single quotes for an apostrophe")
+			return nil, errors.New("Backslashes are not supported, use two single quotes for an apostrophe")
 		}
 		if quote != 0 {
 			current.WriteByte(c)

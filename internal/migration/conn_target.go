@@ -55,7 +55,7 @@ func (s *Service) MakeConnection(ctx context.Context, userID, databaseID int, he
 		if ctx.Err() != nil {
 			return nil, fmt.Errorf("Failed to open the target database connection: %w", ctx.Err())
 		}
-		return nil, errors.New("Failed to connect to the target database; check the address, username, and password")
+		return nil, errors.New("Failed to connect to the target database, check the address, username, and password")
 	}
 	return conn, nil
 }
@@ -75,6 +75,11 @@ func targetConfig(connection store.DatabaseConnection, password string) (*pgx.Co
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid target database connection settings", InvalidInput)
 	}
+
 	config.Password = password
 	return config, nil
+}
+
+func TargetConfig(connection store.DatabaseConnection, password string) (*pgx.ConnConfig, error) {
+	return targetConfig(connection, password)
 }

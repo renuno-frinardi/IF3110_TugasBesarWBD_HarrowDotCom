@@ -20,7 +20,8 @@ type executionTestResult struct {
 
 func TestExecute(t *testing.T) {
 	pool := openTestDatabase(t)
-	service := NewService(NewStore(pool), NewDatabaseAccess(pool))
+	migrationStore := NewStore(pool)
+	service := NewService(migrationStore, NewDatabaseAccess(pool))
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -135,7 +136,7 @@ func TestExecute(t *testing.T) {
 		table := name + "_commit"
 		sql := "CREATE TABLE " + table + " (id INT); INSERT INTO " + table + " VALUES (1), (2);"
 		// Pembuat dan pelaksana sengaja berbeda untuk memeriksa executed_by.
-		draft, err := service.store.CreateDraft(ctx, databaseID, "Commit", sql, readerID)
+		draft, err := migrationStore.CreateDraft(ctx, databaseID, "Commit", sql, readerID)
 		if err != nil {
 			t.Fatal("gagal membuat draft")
 		}
@@ -212,7 +213,7 @@ func TestExecute(t *testing.T) {
 				t.Fatal("pengguna tanpa izin edit tidak boleh execute")
 			}
 		}
-		saved, err := service.store.GetByID(ctx, draft.ID)
+		saved, err := migrationStore.GetByID(ctx, draft.ID)
 		if err != nil || saved.Status != S_Draft || saved.Version != nil {
 			t.Fatal("permintaan yang ditolak tidak boleh mengubah draft")
 		}
@@ -225,7 +226,7 @@ func TestExecute(t *testing.T) {
 		if m != nil || !errors.Is(err, InvalidInput) {
 			t.Fatal("COMMIT dari pengguna harus ditolak")
 		}
-		saved, err := service.store.GetByID(ctx, draft.ID)
+		saved, err := migrationStore.GetByID(ctx, draft.ID)
 		if err != nil || saved.Status != S_Draft || saved.Version != nil {
 			t.Fatal("SQL yang ditolak validator harus tetap menjadi draft")
 		}
@@ -391,7 +392,7 @@ func TestExecute(t *testing.T) {
 		if m != nil || !errors.Is(err, ExecutionPending) {
 			t.Fatal("migration baru harus menunggu pemeriksaan hasil sebelumnya")
 		}
-		saved, err := service.store.GetByID(ctx, draft.ID)
+		saved, err := migrationStore.GetByID(ctx, draft.ID)
 		if err != nil || saved.Status != S_Draft || saved.Version != nil {
 			t.Fatal("draft yang menunggu pemeriksaan tidak boleh dijalankan")
 		}
@@ -434,7 +435,7 @@ func TestExecute(t *testing.T) {
 		if err := target.QueryRow(ctx, "SELECT COUNT(*) FROM "+table).Scan(&count); err != nil || count != 1 {
 			t.Fatal("SQL target seharusnya sudah di-commit")
 		}
-		saved, err := service.store.GetByID(ctx, draft.ID)
+		saved, err := migrationStore.GetByID(ctx, draft.ID)
 		if err != nil || saved.Status != S_Running || saved.FinishTime != nil {
 			t.Fatal("riwayat tidak boleh mengaku selesai saat pencatatan gagal")
 		}
