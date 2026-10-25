@@ -27,6 +27,11 @@ type Resource struct {
 	Source     string
 }
 
+type DatabaseKey struct {
+	Source string
+	ID     int64
+}
+
 // Otorisasi akses kontrol BE
 type Authorizer interface {
 	Can(ctx context.Context, principal Principal, action Action, resource Resource) error
@@ -76,7 +81,7 @@ func (a *DBAuthorizer) Can(ctx context.Context, principal Principal, action Acti
 		if resource.DatabaseID <= 0 {
 			return ErrForbidden
 		}
-		level, err := a.EffectiveDatabaseAccess(ctx, principal.UserID, resource.DatabaseID)
+		level, err := a.EffectiveDatabaseAccessForSource(ctx, principal.UserID, resource.DatabaseID, resource.Source)
 		if err != nil {
 			return err
 		}
@@ -92,16 +97,22 @@ func (a *DBAuthorizer) Can(ctx context.Context, principal Principal, action Acti
 
 // Mengecek seluruh grup untuk user id x dalam mengakses database y dan menghitung level akses efektifnya
 func (a *DBAuthorizer) EffectiveDatabaseAccess(ctx context.Context, userID, databaseID int64) (AccessLevel, error) {
+	return a.EffectiveDatabaseAccessForSource(ctx, userID, databaseID, "")
+}
+
+func (a *DBAuthorizer) EffectiveDatabaseAccessForSource(ctx context.Context, userID, databaseID int64, source string) (AccessLevel, error) {
 	rows, err := a.db.QueryContext(ctx, `
 		SELECT gda.access_level
 		FROM group_database_access gda
 		JOIN user_group_members ugm ON ugm.group_id = gda.group_id
 		JOIN user_groups ug ON ug.id = ugm.group_id
 		JOIN users u ON u.id = ugm.user_id
+		JOIN database_connections dc ON dc.id = gda.database_connection_id
 		WHERE ugm.user_id = $1
 		  AND gda.database_connection_id = $2
+		  AND ($3 = '' OR LOWER(dc.db_type) = CASE WHEN LOWER($3) = 'mysql' THEN 'mariadb' ELSE LOWER($3) END)
 		  AND u.is_active = TRUE
-	`, userID, databaseID)
+	`, userID, databaseID, source)
 	if err != nil {
 		return LevelNone, fmt.Errorf("query database grants: %w", err)
 	}

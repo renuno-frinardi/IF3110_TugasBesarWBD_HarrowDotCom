@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
@@ -107,8 +108,15 @@ func (app *application) migrationCreateHandler(w http.ResponseWriter, r *http.Re
 		http.Error(w, "invalid database_id", http.StatusBadRequest)
 		return
 	}
+
 	source := r.FormValue("source")
 	if !app.checkMigrationPermission(w, r, id, source, authz.ActionMigrationCreate) {
+		return
+	}
+
+	if source == "mariadb" || source == "mysql" {
+		app.renderMigrationsPage(w, r, id, source, strings.TrimSpace(r.FormValue("title")), strings.TrimSpace(r.FormValue("sql")), nil,
+			"EXPLAIN hanya tersedia untuk koneksi PostgreSQL.", "")
 		return
 	}
 
@@ -128,6 +136,7 @@ func (app *application) migrationCreateHandler(w http.ResponseWriter, r *http.Re
 			VALUES ($1, $2, $3, 'draft', $4, NOW())
 		`, id, title, sqlText, user.ID)
 	}
+
 	if err != nil {
 		app.renderMigrationsPage(w, r, id, source, title, sqlText, nil, "Failed to save draft migration.", "")
 		return
@@ -144,12 +153,14 @@ func (app *application) migrationUpdateHandler(w http.ResponseWriter, r *http.Re
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+
 	id, err := strconv.ParseInt(r.FormValue("database_id"), 10, 64)
 	migID, migErr := strconv.Atoi(r.FormValue("migration_id"))
 	if err != nil || id < 1 || migErr != nil || migID < 1 {
 		http.Error(w, "invalid migration or database id", http.StatusBadRequest)
 		return
 	}
+
 	source := r.FormValue("source")
 	if !app.checkMigrationPermission(w, r, id, source, authz.ActionMigrationCreate) {
 		return
@@ -182,6 +193,7 @@ func (app *application) migrationUpdateHandler(w http.ResponseWriter, r *http.Re
 			}
 		}
 	}
+
 	if err != nil {
 		app.renderMigrationsPage(w, r, id, source, "", "", nil, "Unable to update migration (only draft migrations can be edited).", "")
 		return
@@ -195,11 +207,13 @@ func (app *application) migrationExplainHandler(w http.ResponseWriter, r *http.R
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+
 	id, err := strconv.ParseInt(r.FormValue("database_id"), 10, 64)
 	if err != nil || id < 1 {
 		http.Error(w, "invalid database_id", http.StatusBadRequest)
 		return
 	}
+
 	source := r.FormValue("source")
 	// EXPLAIN / EXPLAIN ANALYZE is restricted to View+Edit
 	if !app.checkMigrationPermission(w, r, id, source, authz.ActionMigrationCreate) {
@@ -209,6 +223,15 @@ func (app *application) migrationExplainHandler(w http.ResponseWriter, r *http.R
 	title := strings.TrimSpace(r.FormValue("title"))
 	sqlText := strings.TrimSpace(r.FormValue("sql"))
 	analyze := r.FormValue("analyze") == "true"
+	if migrationID, parseErr := strconv.Atoi(r.FormValue("migration_id")); sqlText == "" && parseErr == nil && migrationID > 0 {
+		user, _ := auth.UserFromContext(r.Context())
+		draft, getErr := app.migService.GetByID(r.Context(), int(user.ID), migrationID)
+		if getErr != nil || draft.DatabaseID != int(id) {
+			http.Error(w, "Migration not found on this database.", http.StatusNotFound)
+			return
+		}
+		title, sqlText = draft.Title, draft.SQL
+	}
 
 	if explain.IsPureDDL(sqlText) {
 		res, _ := explain.ExplainPostgres(r.Context(), nil, sqlText, analyze)
@@ -236,12 +259,14 @@ func (app *application) migrationExecuteHandler(w http.ResponseWriter, r *http.R
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	
 	id, err := strconv.ParseInt(r.FormValue("database_id"), 10, 64)
 	migID, migErr := strconv.Atoi(r.FormValue("migration_id"))
 	if err != nil || id < 1 || migErr != nil || migID < 1 {
 		http.Error(w, "invalid migration or database id", http.StatusBadRequest)
 		return
 	}
+
 	source := r.FormValue("source")
 	if !app.checkMigrationPermission(w, r, id, source, authz.ActionMigrationExecute) {
 		return
@@ -254,12 +279,25 @@ func (app *application) migrationExecuteHandler(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	result, err := app.migService.Execute(r.Context(), int(user.ID), migID, app.encryptionKey)
+	var result *migration.Migration
+	if source == "mariadb" || source == "mysql" {
+		target, openErr := app.openTargetMariaDB(r.Context(), id, source)
+		if openErr != nil {
+			app.renderMigrationsPage(w, r, id, source, "", "", nil, "Unable to connect to target MariaDB.", "")
+			return
+		}
+		defer target.Close()
+		result, err = app.migService.ExecuteMariaDB(r.Context(), int(user.ID), migID, target)
+	} else {
+		result, err = app.migService.Execute(r.Context(), int(user.ID), migID, app.encryptionKey)
+	}
+
 	if err != nil {
 		message := "Migration gagal. Periksa status dan pesan error pada riwayat."
 		if errors.Is(err, migration.InvalidInput) || errors.Is(err, migration.NotDraft) {
 			message = err.Error()
 		}
+
 		if errors.Is(err, migration.ExecutionPending) || (result != nil && result.Status == migration.S_Running) {
 			message = "Hasil migration perlu diperiksa. Jangan jalankan ulang SQL."
 		}
@@ -271,17 +309,41 @@ func (app *application) migrationExecuteHandler(w http.ResponseWriter, r *http.R
 	app.renderMigrationsPage(w, r, id, source, "", "", nil, "", "Migration executed and committed successfully.")
 }
 
-func (app *application) checkMigrationPermission(w http.ResponseWriter, r *http.Request, id int64, source string, action authz.Action) bool {
-	if source != "" && source != "postgresql" {
-		http.Error(w, "Migration saat ini hanya mendukung PostgreSQL.", http.StatusBadRequest)
-		return false
+func (app *application) openTargetMariaDB(ctx context.Context, id int64, source string) (*sql.DB, error) {
+	connection, err := store.GetDatabaseConnection(ctx, app.stores.forType(source), id)
+	if err != nil {
+		return nil, err
 	}
+
+	encrypted, err := store.GetEncryptedPassword(ctx, app.stores.forType(source), id)
+	if err != nil {
+		return nil, err
+	}
+
+	dsn, err := store.MariaDBTargetDSN(connection, encrypted, app.encryptionKeyOrEnv())
+	if err != nil {
+		return nil, err
+	}
+
+	target, err := sql.Open("mysql", dsn)
+	if err != nil {
+		return nil, err
+	}
+	
+	if err := target.PingContext(ctx); err != nil {
+		target.Close()
+		return nil, err
+	}
+	return target, nil
+}
+
+func (app *application) checkMigrationPermission(w http.ResponseWriter, r *http.Request, id int64, source string, action authz.Action) bool {
 	if !app.checkDatabasePermission(w, r, id, source, action) {
 		return false
 	}
-	connection, err := store.GetDatabaseConnection(r.Context(), app.stores.postgres, id)
-	if err != nil || !connection.IsActive || connection.DBType != "postgresql" {
-		http.Error(w, "Koneksi PostgreSQL tidak tersedia atau tidak aktif.", http.StatusBadRequest)
+	connection, err := store.GetDatabaseConnection(r.Context(), app.stores.forType(source), id)
+	if err != nil || !connection.IsActive {
+		http.Error(w, "Koneksi database tidak tersedia atau tidak aktif.", http.StatusBadRequest)
 		return false
 	}
 	return true
