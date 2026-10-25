@@ -115,6 +115,16 @@ func PostgresTargetConfig(connection DatabaseConnection, encryptedPassword []byt
 	return config, nil
 }
 
+func MariaDBTargetDSN(connection DatabaseConnection, encryptedPassword []byte, hexKey string) (string, error) {
+	password, err := DecryptSecret(encryptedPassword, hexKey)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?multiStatements=true&parseTime=true",
+		url.QueryEscape(connection.Username), url.QueryEscape(password),
+		connection.Host, connection.Port, url.QueryEscape(connection.DatabaseName)), nil
+}
+
 func ListDatabaseConnections(ctx context.Context, pool *DB) ([]DatabaseConnection, error) {
 	rows, err := pool.DB.QueryContext(ctx, pool.Rebind(`
 		SELECT id, name, host, port, database_name, username, db_type, ssl_mode, is_active, created_at, updated_at
