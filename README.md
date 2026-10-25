@@ -40,6 +40,20 @@ Tugas besar IF3110 Pengembangan Aplikasi Web.
 
 File dengan akhiran `_test.go` berisi pengujian untuk package tempat file tersebut berada.
 
+## ERD Model Relasional
+
+ERD berikut menunjukkan model relasional database Harrow:
+
+![ERD Model Relasional](assets/Model_Relasional.png)
+
+Relasi utamanya adalah:
+
+- `users` menyimpan akun pengguna, sedangkan `sessions` menyimpan sesi login yang terkait dengan setiap user.
+- `users` dan `user_groups` terhubung secara many-to-many melalui `user_group_members`.
+- `user_groups` dan `database_connections` juga terhubung secara many-to-many melalui `group_database_access`. Tabel ini menyimpan level akses `View` atau `View + Edit`.
+- Hak akses aplikasi dikelola melalui `roles`, `permissions`, `role_permissions`, dan `user_roles`.
+- `audit_logs` mencatat aktivitas pengguna terhadap resource aplikasi atau koneksi database.
+
 ## Cara Menjalankan
 
 Semua perintah berikut dijalankan dari root repository.
