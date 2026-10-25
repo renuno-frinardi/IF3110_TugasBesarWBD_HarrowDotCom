@@ -88,6 +88,7 @@ type application struct {
 	dbAuthorizer  *authz.DBAuthorizer
 	adminStore    *admin.Store
 	migStore      *migration.Store
+	migService    *migration.Service
 	encryptionKey string
 	logger        *log.Logger
 }
@@ -186,6 +187,7 @@ func main() {
 		dbAuthorizer:  dbAuthz,
 		adminStore:    adminStore,
 		migStore:      migStore,
+		migService:    migration.NewService(migStore, migration.NewDatabaseAccess(pgPool)),
 		encryptionKey: os.Getenv("ENCRYPTION_KEY"),
 		logger:        logger,
 	}
