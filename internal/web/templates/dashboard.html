@@ -32,6 +32,55 @@
     ><span class="stat-note">Recorded activities</span>
   </div>
 </section>
+
+{{if .EditableConnections}}
+<section class="panel" style="margin-bottom: 24px;">
+  <div class="panel-heading">
+    <div>
+      <p class="eyebrow">Data modification access (View + Edit)</p>
+      <h2>Modify database entries &amp; migrations</h2>
+      <p class="muted">You have write permissions on these databases to visually add/edit table rows or run migrations.</p>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Database</th>
+          <th>Type</th>
+          <th>Host</th>
+          <th>Access Level</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .EditableConnections}}
+        <tr>
+          <td>
+            <strong>{{.Name}}</strong>
+            <small>{{.DatabaseName}}</small>
+          </td>
+          <td>{{.DBType}}</td>
+          <td>{{.Host}}:{{.Port}}</td>
+          <td><span class="badge green">View + Edit</span></td>
+          <td>
+            <div class="toolbar" style="margin-bottom:0; gap:8px; justify-content:flex-start;">
+              {{if .IsActive}}
+              <a class="button primary" href="/connections/explore?id={{.ID}}&source={{.Source}}">Visual Data Editor</a>
+              <a class="button secondary" href="/connections/migrations?id={{.ID}}&source={{.Source}}">SQL Migrations</a>
+              {{else}}
+              <span class="badge gray">Connection Inactive</span>
+              {{end}}
+            </div>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</section>
+{{end}}
+
 <section class="panel">
   <div class="panel-heading">
     <div>

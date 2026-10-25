@@ -14,8 +14,9 @@ func (app *application) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(web.StaticFS()))))
 
-	// Public authentication endpoint
+	// Public authentication endpoints
 	mux.HandleFunc("/login", app.loginHandler)
+	mux.HandleFunc("/signup", app.signupHandler)
 	mux.HandleFunc("/logout", app.requireAuth(app.logoutHandler))
 
 	// Protected workspace endpoints
@@ -23,6 +24,9 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("/connections", app.requireAuth(app.connectionsHandler))
 	mux.HandleFunc("/connections/view", app.requireAuth(app.connectionDetailHandler))
 	mux.HandleFunc("/connections/explore", app.requireAuth(app.exploreConnectionHandler))
+	mux.HandleFunc("/connections/explore/insert", app.requireAuth(app.exploreInsertRowHandler))
+	mux.HandleFunc("/connections/explore/update", app.requireAuth(app.exploreUpdateRowHandler))
+	mux.HandleFunc("/connections/explore/delete", app.requireAuth(app.exploreDeleteRowHandler))
 
 	// Protected connection management endpoints (PlatformAdmin only)
 	mux.HandleFunc("/connections/new", app.requireAuth(app.requirePermission(authz.ActionPlatformAdmin, nil, app.newConnectionHandler)))
@@ -136,6 +140,9 @@ func (app *application) checkDatabasePermission(w http.ResponseWriter, r *http.R
 	if !ok {
 		app.handleUnauthenticated(w, r)
 		return false
+	}
+	if user.IsAdmin {
+		return true
 	}
 	principal := authz.Principal{
 		UserID:   user.ID,

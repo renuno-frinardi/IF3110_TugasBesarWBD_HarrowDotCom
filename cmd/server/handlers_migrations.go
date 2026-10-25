@@ -43,7 +43,7 @@ func (app *application) renderMigrationsPage(w http.ResponseWriter, r *http.Requ
 
 	user, _ := auth.UserFromContext(r.Context())
 	principal := authz.Principal{UserID: user.ID, Username: user.Username, IsAdmin: user.IsAdmin}
-	canEdit := app.authorizer.Can(r.Context(), principal, authz.ActionMigrationCreate, authz.Resource{DatabaseID: id, Source: source}) == nil
+	canEdit := user.IsAdmin || app.authorizer.Can(r.Context(), principal, authz.ActionMigrationCreate, authz.Resource{DatabaseID: id, Source: source}) == nil
 
 	var migrationsList []migration.Migration
 	if app.migStore != nil {
