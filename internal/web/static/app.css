@@ -381,6 +381,7 @@ body {
 }
 
 .table-wrap {
+  min-width: 0;
   overflow: auto;
 }
 
@@ -388,6 +389,176 @@ table {
   border-collapse: collapse;
   width: 100%;
   text-align: left;
+}
+
+.groups-table {
+  table-layout: fixed;
+}
+
+.groups-table th,
+.groups-table td {
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.groups-table th:nth-child(1),
+.groups-table td:nth-child(1) {
+  width: 13%;
+}
+
+.groups-table th:nth-child(2),
+.groups-table td:nth-child(2) {
+  width: 17%;
+}
+
+.groups-table th:nth-child(3),
+.groups-table td:nth-child(3) {
+  width: 25%;
+}
+
+.groups-table th:nth-child(4),
+.groups-table td:nth-child(4) {
+  width: 12%;
+}
+
+.groups-table th:nth-child(5),
+.groups-table td:nth-child(5) {
+  width: 33%;
+}
+
+.groups-table input,
+.groups-table select {
+  min-width: 0;
+  width: 100%;
+}
+
+.member-row {
+  align-items: start;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin-bottom: 8px;
+}
+
+.member-row > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.member-row form {
+  flex: 0 0 auto;
+}
+
+.groups-table .badge {
+  display: inline-block;
+  margin: 0;
+  max-width: 100%;
+  text-align: center;
+  white-space: normal;
+}
+
+.users-table {
+  table-layout: fixed;
+}
+
+.users-table th,
+.users-table td {
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}
+
+.users-table th:nth-child(1),
+.users-table td:nth-child(1) {
+  width: 18%;
+}
+
+.users-table th:nth-child(2),
+.users-table td:nth-child(2) {
+  width: 13%;
+}
+
+.users-table th:nth-child(3),
+.users-table td:nth-child(3) {
+  width: 17%;
+}
+
+.users-table th:nth-child(4),
+.users-table td:nth-child(4) {
+  width: 12%;
+}
+
+.users-table th:nth-child(5),
+.users-table td:nth-child(5) {
+  width: 25%;
+}
+
+.users-table th:nth-child(6),
+.users-table td:nth-child(6) {
+  width: 15%;
+}
+
+.users-table .badge {
+  display: inline-block;
+  margin: 0;
+  max-width: 100%;
+  text-align: center;
+  white-space: normal;
+}
+
+.password-reset-form {
+  align-items: end;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin: 0;
+}
+
+.password-reset-form label {
+  min-width: 0;
+}
+
+.password-reset-form input {
+  min-width: 0;
+  width: 100%;
+}
+
+.password-reset-form .button {
+  white-space: nowrap;
+}
+
+.user-actions {
+  align-items: stretch;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.user-actions form {
+  margin: 0;
+}
+
+.user-actions .button {
+  white-space: normal;
+}
+
+.groups-update-form {
+  align-items: end;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(90px, 1fr) minmax(120px, 1.5fr) auto;
+  margin: 0 0 10px;
+}
+
+.groups-update-form label {
+  min-width: 0;
+}
+
+.groups-update-form .button {
+  white-space: nowrap;
+}
+
+.group-delete-form {
+  margin: 0;
 }
 
 .connection-table th:last-child,
@@ -672,6 +843,124 @@ select:focus {
   .form-grid,
   .explorer-layout {
     grid-template-columns: 1fr;
+  }
+  .groups-table {
+    table-layout: auto;
+  }
+  .users-table {
+    table-layout: auto;
+  }
+  .groups-table-wrap {
+    overflow: visible;
+  }
+  .users-table-wrap {
+    overflow: visible;
+  }
+  .groups-table thead {
+    display: none;
+  }
+  .users-table thead {
+    display: none;
+  }
+  .groups-table,
+  .groups-table tbody,
+  .groups-table tr,
+  .groups-table td {
+    display: block;
+    width: 100%;
+  }
+  .users-table,
+  .users-table tbody,
+  .users-table tr,
+  .users-table td {
+    display: block;
+    width: 100%;
+  }
+  .groups-table tr {
+    border-bottom: 1px solid var(--line);
+    padding: 16px 0;
+  }
+  .groups-table tr:last-child {
+    border-bottom: 0;
+  }
+  .users-table tr {
+    border-bottom: 1px solid var(--line);
+    padding: 16px 0;
+  }
+  .users-table tr:last-child {
+    border-bottom: 0;
+  }
+  .groups-table td {
+    border-bottom: 0;
+    padding: 7px 0;
+  }
+  .users-table td {
+    border-bottom: 0;
+    padding: 7px 0;
+  }
+  .groups-table td::before {
+    color: var(--muted);
+    display: block;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+  }
+  .groups-table td:nth-child(1)::before {
+    content: "Group";
+  }
+  .groups-table td:nth-child(2)::before {
+    content: "Description";
+  }
+  .groups-table td:nth-child(3)::before {
+    content: "Members";
+  }
+  .groups-table td:nth-child(4)::before {
+    content: "Grants";
+  }
+  .groups-table td:nth-child(5)::before {
+    content: "Update / Delete";
+  }
+  .users-table td::before {
+    color: var(--muted);
+    display: block;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+  }
+  .users-table td:nth-child(1)::before {
+    content: "Username";
+  }
+  .users-table td:nth-child(2)::before {
+    content: "Role";
+  }
+  .users-table td:nth-child(3)::before {
+    content: "Groups";
+  }
+  .users-table td:nth-child(4)::before {
+    content: "Status";
+  }
+  .users-table td:nth-child(5)::before {
+    content: "Password reset";
+  }
+  .users-table td:nth-child(6)::before {
+    content: "Actions";
+  }
+  .groups-update-form {
+    grid-template-columns: 1fr 1fr;
+  }
+  .groups-update-form .button {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+  .password-reset-form {
+    grid-template-columns: 1fr;
+  }
+  .password-reset-form .button {
+    justify-self: start;
   }
 }
 

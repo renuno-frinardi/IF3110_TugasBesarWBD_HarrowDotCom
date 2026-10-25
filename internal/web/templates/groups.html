@@ -65,8 +65,8 @@
     </div>
   </div>
   {{if .Groups}}
-  <div class="table-wrap">
-    <table>
+  <div class="table-wrap groups-table-wrap">
+    <table class="groups-table">
       <thead>
         <tr>
           <th>Group</th>
@@ -84,7 +84,7 @@
           <td>
             {{if $group.Members}}
               {{range $group.Members}}
-              <div class="toolbar" style="margin:0 0 6px 0; align-items:center;">
+              <div class="member-row">
                 <span>{{.Username}}</span>
                 <form method="post" action="/groups/members/remove" style="margin:0;">
                   {{csrfField $.CSRFToken}}
@@ -100,7 +100,7 @@
           </td>
           <td><span class="badge green">{{$group.GrantCount}} databases</span></td>
           <td>
-            <form method="post" action="/groups/update" class="toolbar" style="margin:0 0 6px 0;">
+            <form method="post" action="/groups/update" class="groups-update-form">
               {{csrfField $.CSRFToken}}
               <input type="hidden" name="group_id" value="{{$group.ID}}" />
               <label>Name
@@ -111,7 +111,7 @@
               </label>
               <button class="button secondary" type="submit">Save</button>
             </form>
-            <form method="post" action="/groups/delete" style="margin:0;">
+            <form method="post" action="/groups/delete" class="group-delete-form">
               {{csrfField $.CSRFToken}}
               <input type="hidden" name="group_id" value="{{$group.ID}}" />
               <button class="button danger" type="submit">Delete group</button>

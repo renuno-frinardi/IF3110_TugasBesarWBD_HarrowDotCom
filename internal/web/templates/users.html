@@ -45,8 +45,8 @@
     </div>
   </div>
   {{if .Users}}
-  <div class="table-wrap">
-    <table>
+  <div class="table-wrap users-table-wrap">
+    <table class="users-table">
       <thead>
         <tr>
           <th>Username</th>
@@ -82,7 +82,7 @@
             </span>
           </td>
           <td>
-            <form method="post" action="/users/reset-password" class="toolbar" style="margin:0;">
+            <form method="post" action="/users/reset-password" class="password-reset-form">
               {{csrfField $.CSRFToken}}
               <input type="hidden" name="user_id" value="{{.ID}}" />
               <label>New password
@@ -92,7 +92,7 @@
             </form>
           </td>
           <td>
-            <div class="toolbar" style="margin:0;">
+            <div class="user-actions">
               <form method="post" action="/users/toggle-active" style="margin:0;">
                 {{csrfField $.CSRFToken}}
                 <input type="hidden" name="user_id" value="{{.ID}}" />
