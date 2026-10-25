@@ -38,10 +38,10 @@ func TestValidateSQL(t *testing.T) {
 			err := validateSQL(test.sql)
 			if test.invalid {
 				if !errors.Is(err, InvalidInput) {
-					t.Fatalf("input salah seharusnya ditolak, mendapat: %v", err)
+					t.Fatalf("invalid input should be rejected, got: %v", err)
 				}
 			} else if err != nil {
-				t.Fatalf("SQL seharusnya diterima: %v", err)
+				t.Fatalf("SQL should be accepted: %v", err)
 			}
 		})
 	}
