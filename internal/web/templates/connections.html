@@ -45,9 +45,11 @@
     <h1>Database connections</h1>
     <p class="muted">Manage the databases connected to your workspace</p>
   </div>
+  {{if .IsAdmin}}
   <a class="button primary" href="/connections/new"
     >Add connection <span>＋</span></a
   >
+  {{end}}
 </section>
 <section class="panel">
   <form class="toolbar" method="get" action="/connections">

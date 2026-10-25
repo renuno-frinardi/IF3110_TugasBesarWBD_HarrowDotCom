@@ -10,6 +10,7 @@
 </section>
 <section class="panel form-panel">
   <form method="post" action="/connections/new">
+    {{csrfField .CSRFToken}}
     <div class="form-section">
       <h2>Connection details</h2>
       <p class="muted">These details identify the database in Harrow.</p>

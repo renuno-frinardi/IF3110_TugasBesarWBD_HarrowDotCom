@@ -13,12 +13,19 @@
         <a class="brand" href="/">harrow<span>.</span></a>
         <p class="eyebrow">Database management</p>
         <nav class="nav">
+          {{if .CurrentUser}}
           <a href="/"{{if eq .Active "dashboard"}} class="active"{{end}}>Dashboard</a>
           <a href="/connections"{{if eq .Active "connections"}} class="active"{{end}}>Database connections</a>
+          {{if .IsAdmin}}
+          <p class="eyebrow">Admin</p>
           <a href="/users"{{if eq .Active "users"}} class="active"{{end}}>Users</a>
           <a href="/groups"{{if eq .Active "groups"}} class="active"{{end}}>Groups</a>
           <a href="/access"{{if eq .Active "access"}} class="active"{{end}}>Access management</a>
           <a href="/audit-logs"{{if eq .Active "audit"}} class="active"{{end}}>Audit logs</a>
+          {{end}}
+          {{else}}
+          <a href="/login"{{if eq .Active "login"}} class="active"{{end}}>Sign in</a>
+          {{end}}
         </nav>
         <div class="sidebar-footer">
           <span class="status-dot"></span> System operational
@@ -30,7 +37,19 @@
             <p class="eyebrow">Workspace</p>
             <strong>Harrow Platform</strong>
           </div>
-          <div class="avatar">AD</div>
+          <div class="toolbar" style="margin-bottom:0; align-items:center;">
+            {{if .CurrentUser}}
+            <span class="muted">{{.CurrentUser.Username}}</span>
+            {{if .IsAdmin}}<span class="badge green">Admin</span>{{end}}
+            <div class="avatar">{{initial .CurrentUser.Username}}</div>
+            <form method="post" action="/logout" style="margin:0;">
+              {{csrfField .CSRFToken}}
+              <button class="button secondary" type="submit">Sign out</button>
+            </form>
+            {{else}}
+            <a class="button secondary" href="/login">Sign in</a>
+            {{end}}
+          </div>
         </header>
         {{if .Error}}
         <div class="alert error">{{.Error}}</div>

@@ -38,6 +38,10 @@
     <a class="button primary" href="/connections/explore?id={{.Connection.ID}}&source={{.Connection.Source}}"
       >Explore data</a
     >
+    <a class="button secondary" href="/connections/migrations?id={{.Connection.ID}}&source={{.Connection.Source}}"
+      >Migrations</a
+    >
+    {{if .IsAdmin}}
     <a class="button secondary" href="/connections/edit?id={{.Connection.ID}}&source={{.Connection.Source}}"
       >Edit connection</a
     >
@@ -46,10 +50,12 @@
       action="/connections/delete"
       onsubmit="return confirm('Delete this connection?');"
     >
+      {{csrfField .CSRFToken}}
       <input type="hidden" name="id" value="{{.Connection.ID}}" />
       <input type="hidden" name="source" value="{{.Connection.Source}}" />
       <button class="button danger" type="submit">Delete connection</button>
     </form>
+    {{end}}
   </div>
 </section>
 {{end}}
