@@ -1,0 +1,53 @@
+{{define "content"}}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Workspace / Connections / Edit</p>
+    <h1>Edit database connection</h1>
+    <p class="muted">Update the connection profile. Leave password blank to keep it unchanged.</p>
+  </div>
+</section>
+<section class="panel form-panel">
+  <form method="post" action="/connections/edit?id={{.Connection.ID}}&source={{.Connection.Source}}">
+    {{csrfField .CSRFToken}}
+    <div class="form-grid">
+      <label>Connection name
+        <input name="name" required maxlength="100" value="{{.Connection.Name}}" />
+      </label>
+      <label>Database type
+        <select name="db_type">
+          <option value="postgresql" {{if eq .Connection.DBType "postgresql"}}selected{{end}}>PostgreSQL</option>
+          <option value="mysql" {{if eq .Connection.DBType "mysql"}}selected{{end}}>MySQL</option>
+          <option value="mariadb" {{if eq .Connection.DBType "mariadb"}}selected{{end}}>MariaDB</option>
+        </select>
+      </label>
+      <label>Host
+        <input name="host" required maxlength="255" value="{{.Connection.Host}}" />
+      </label>
+      <label>Port
+        <input name="port" type="number" min="1" max="65535" required value="{{.Connection.Port}}" />
+      </label>
+      <label>Database name
+        <input name="database_name" required maxlength="63" value="{{.Connection.DatabaseName}}" />
+      </label>
+      <label>Username
+        <input name="username" required maxlength="63" value="{{.Connection.Username}}" />
+      </label>
+      <label>Password
+        <input name="password" type="password" autocomplete="new-password" />
+      </label>
+      <label>SSL mode
+        <select name="ssl_mode">
+          <option value="prefer" {{if eq .Connection.SSLMode "prefer"}}selected{{end}}>Prefer</option>
+          <option value="require" {{if eq .Connection.SSLMode "require"}}selected{{end}}>Require</option>
+          <option value="verify-full" {{if eq .Connection.SSLMode "verify-full"}}selected{{end}}>Verify full</option>
+          <option value="disable" {{if eq .Connection.SSLMode "disable"}}selected{{end}}>Disable</option>
+        </select>
+      </label>
+    </div>
+    <div class="form-actions">
+      <a class="button secondary" href="/connections/view?id={{.Connection.ID}}">Cancel</a>
+      <button class="button primary" type="submit">Save changes</button>
+    </div>
+  </form>
+</section>
+{{end}}

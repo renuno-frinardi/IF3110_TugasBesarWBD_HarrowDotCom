@@ -12,17 +12,47 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
+	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/admin"
+	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/auth"
+	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/authz"
+	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/explain"
+	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/migration"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/store"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/web"
 )
 
 type pageData struct {
-	Title       string
-	Active      string
-	Error       string
-	Success     string
-	Stats       dashboardStats
-	Connections []store.DatabaseConnection
+	Title                  string
+	Active                 string
+	Error                  string
+	ErrorMessage           string
+	Success                string
+	CurrentUser            *auth.User
+	IsAdmin                bool
+	CSRFToken              string
+	Stats                  dashboardStats
+	Connections            []store.DatabaseConnection
+	EditableConnections    []store.DatabaseConnection
+	PostgreSQLConnections  []store.DatabaseConnection
+	MariaDBConnections     []store.DatabaseConnection
+	PostgreSQLTable        connectionTableData
+	MariaDBTable           connectionTableData
+	Connection             store.DatabaseConnection
+	FormConnection         store.CreateDatabaseConnectionInput
+	FormPassword           string
+	Explorer               store.ExplorerData
+	ConnectionSearch       string
+	ConnectionTypeFilter   string
+	ConnectionStatusFilter string
+	Users                  []admin.UserRecord
+	Groups                 []admin.GroupRecord
+	Grants                 []admin.DatabaseGrantRecord
+	AuditLogs              []admin.AuditLogRecord
+	Migrations             []migration.Migration
+	CanEditMigration       bool
+	DraftTitle             string
+	DraftSQL               string
+	ExplainResult          *explain.Result
 }
 
 type dashboardStats struct {
@@ -32,168 +62,159 @@ type dashboardStats struct {
 	AuditLogs   int
 }
 
+type connectionTableData struct {
+	Connections []store.DatabaseConnection
+	CSRFToken   string
+}
+
+type appStores struct {
+	postgres *store.DB
+	mariaDB  *store.DB
+	pgPool   *pgxpool.Pool
+}
+
+func (s *appStores) forType(dbType string) *store.DB {
+	if (dbType == "mariadb" || dbType == "mysql") && s.mariaDB != nil {
+		return s.mariaDB
+	}
+	return s.postgres
+}
+
+type application struct {
+	stores        *appStores
+	authSvc       *auth.Service
+	sessions      *auth.SessionManager
+	authorizer    authz.Authorizer
+	dbAuthorizer  *authz.DBAuthorizer
+	adminStore    *admin.Store
+	migStore      *migration.Store
+	encryptionKey string
+	logger        *log.Logger
+}
+
 func main() {
+	redactingOut := auth.NewRedactingWriter(os.Stderr)
+	log.SetOutput(redactingOut)
+	logger := log.New(redactingOut, "", log.LstdFlags)
+
 	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
 		log.Fatalf("failed to load .env: %v", err)
-	}
-	databaseURL := os.Getenv("DATABASE_URL")
-	if databaseURL == "" {
-		log.Fatal("DATABASE_URL is not set")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
+
+	postgresURL := envOrDefault("POSTGRES_DATABASE_URL", store.PostgresAppURL(
+		envOrDefault("POSTGRES_HOST", "localhost"), envIntOrDefault("POSTGRES_PORT", 5433),
+		envOrDefault("POSTGRES_DB", "harrow_db"), envOrDefault("POSTGRES_USER", "harrow"),
+		os.Getenv("POSTGRES_PASSWORD"),
+	))
+
+	postgresDB, err := store.OpenDB(ctx, "postgresql", postgresURL)
 	if err != nil {
-		log.Fatalf("Failed to configure PostgreSQL connection pool: %v", err)
+		log.Fatalf("Failed to configure PostgreSQL database: %v", err)
+	}
+	defer postgresDB.Close()
+
+	if err := store.RunMigrations(ctx, postgresDB); err != nil {
+		log.Fatalf("Failed to run PostgreSQL migrations: %v", err)
 	}
 
-	defer pool.Close()
-	if err := pool.Ping(ctx); err != nil {
-		log.Fatalf("Failed to connect to PostgreSQL: %v", err)
+	if len(os.Args) > 1 && os.Args[1] == "seed-admin" {
+		username := os.Getenv("SEED_ADMIN_USERNAME")
+		if len(os.Args) > 2 && strings.TrimSpace(os.Args[2]) != "" {
+			username = strings.TrimSpace(os.Args[2])
+		}
+		if username == "" {
+			username = "admin"
+		}
+		password, err := auth.ReadSeedPassword(os.Stdin)
+		if err != nil {
+			log.Fatalf("seed-admin failed to read password: %v", err)
+		}
+		sessMgr := auth.NewSessionManager(auth.NewPostgresSessionStore(postgresDB.DB), auth.DefaultSessionConfig())
+		authSvc, err := auth.NewService(postgresDB.DB, sessMgr)
+		if err != nil {
+			log.Fatalf("seed-admin init failed: %v", err)
+		}
+		u, err := authSvc.SeedAdmin(ctx, username, password)
+		if err != nil {
+			log.Fatalf("seed-admin failed: %v", err)
+		}
+		fmt.Fprintf(os.Stdout, "Seeded Platform Admin %q (id=%d)\n", u.Username, u.ID)
+		return
 	}
 
-	if err := store.RunMigrations(ctx, pool); err != nil {
-		log.Fatalf("Failed to run migrations: %v", err)
+	pgPool, err := pgxpool.New(ctx, postgresURL)
+	if err != nil {
+		log.Fatalf("Failed to open PostgreSQL pool: %v", err)
+	}
+	defer pgPool.Close()
+
+	var mariaDB *store.DB
+	mariaURL := envOrDefault("MARIADB_DATABASE_URL", store.MariaDBAppURL(
+		envOrDefault("MARIADB_HOST", "localhost"), envIntOrDefault("MARIADB_PORT", 3307),
+		envOrDefault("MARIADB_DATABASE", "harrow_db"), envOrDefault("MARIADB_USER", "harrow"),
+		os.Getenv("MARIADB_PASSWORD"),
+	))
+	if mdb, err := store.OpenDB(ctx, "mariadb", mariaURL); err == nil {
+		if migErr := store.RunMigrations(ctx, mdb); migErr != nil {
+			mdb.Close()
+			log.Fatalf("Failed to run MariaDB migrations: %v", migErr)
+		}
+		mariaDB = mdb
+		defer mariaDB.Close()
+	} else {
+		logger.Printf("MariaDB internal store unavailable, continuing with PostgreSQL platform store: %v", err)
 	}
 
-	mux := http.NewServeMux()
-	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(web.StaticFS()))))
-	mux.HandleFunc("/", dashboardHandler(pool))
-	mux.HandleFunc("/connections", connectionsHandler(pool))
-	mux.HandleFunc("/connections/new", newConnectionHandler(pool))
-	mux.HandleFunc("/users", placeholderHandler("Users", "users"))
-	mux.HandleFunc("/groups", placeholderHandler("Groups", "groups"))
-	mux.HandleFunc("/access", placeholderHandler("Access management", "placeholder"))
-	mux.HandleFunc("/audit-logs", placeholderHandler("Audit logs", "placeholder"))
+	stores := &appStores{postgres: postgresDB, mariaDB: mariaDB, pgPool: pgPool}
+	sessMgr := auth.NewSessionManager(auth.NewPostgresSessionStore(postgresDB.DB), auth.DefaultSessionConfig())
+	authSvc, err := auth.NewService(postgresDB.DB, sessMgr)
+	if err != nil {
+		log.Fatalf("Failed to initialize auth service: %v", err)
+	}
+	dbAuthz := authz.NewDBAuthorizer(postgresDB.DB)
+	adminStore := admin.NewStore(postgresDB.DB, authSvc, sessMgr)
+	migStore := migration.NewStore(pgPool)
+
+	app := &application{
+		stores:        stores,
+		authSvc:       authSvc,
+		sessions:      sessMgr,
+		authorizer:    dbAuthz,
+		dbAuthorizer:  dbAuthz,
+		adminStore:    adminStore,
+		migStore:      migStore,
+		encryptionKey: os.Getenv("ENCRYPTION_KEY"),
+		logger:        logger,
+	}
 
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
 
-	log.Printf("Harrow is running at http://localhost:%s", port)
-	
-	if err := http.ListenAndServe(":"+port, mux); err != nil {
+	logger.Printf("Harrow is running at http://localhost:%s", port)
+
+	if err := http.ListenAndServe(":"+port, app.routes()); err != nil {
 		log.Fatalf("Server stopped: %v", err)
 	}
 }
 
-func dashboardHandler(pool *pgxpool.Pool) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/" {
-			http.NotFound(w, r)
-			return
-		}
-
-		connections, err := store.ListDatabaseConnections(r.Context(), pool)
-		if err != nil {
-			render(w, "dashboard", pageData{Title: "Dashboard", Active: "dashboard", Error: err.Error()})
-			return
-		}
-
-		stats := dashboardStats{Connections: len(connections)}
-		stats.Users, err = store.CountRecords(r.Context(), pool, "users")
-		if err != nil {
-			render(w, "dashboard", pageData{Title: "Dashboard", Active: "dashboard", Error: err.Error()})
-			return
-		}
-
-		stats.Groups, err = store.CountRecords(r.Context(), pool, "user_groups")
-		if err != nil {
-			render(w, "dashboard", pageData{Title: "Dashboard", Active: "dashboard", Error: err.Error()})
-			return
-		}
-		
-		stats.AuditLogs, err = store.CountRecords(r.Context(), pool, "audit_logs")
-		if err != nil {
-			render(w, "dashboard", pageData{Title: "Dashboard", Active: "dashboard", Error: err.Error()})
-			return
-		}
-
-		if len(connections) > 4 {
-			connections = connections[:4]
-		}
-
-		render(w, "dashboard", pageData{Title: "Dashboard", Active: "dashboard", Stats: stats, Connections: connections})
+func envOrDefault(key, fallback string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
 	}
+	return fallback
 }
 
-func connectionsHandler(pool *pgxpool.Pool) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		connections, err := store.ListDatabaseConnections(r.Context(), pool)
-		if err != nil {
-			render(w, "connections", pageData{Title: "Connections", Active: "connections", Error: err.Error()})
-			return
-		}
-
-		render(w, "connections", pageData{Title: "Connections", Active: "connections", Connections: connections})
+func envIntOrDefault(key string, fallback int) int {
+	value, err := strconv.Atoi(os.Getenv(key))
+	if err != nil || value < 1 {
+		return fallback
 	}
-}
-
-func newConnectionHandler(pool *pgxpool.Pool) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		data := pageData{Title: "Add connection", Active: "connections"}
-		if r.Method == http.MethodGet {
-			render(w, "connection_new", data)
-			return
-		}
-
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		if err := r.ParseForm(); err != nil {
-			data.Error = "Invalid form submission."
-			render(w, "connection_new", data)
-			return
-		}
-
-		port, err := strconv.Atoi(r.FormValue("port"))
-		if err != nil {
-			data.Error = "Port must be a number."
-			render(w, "connection_new", data)
-			return
-		}
-
-		input := store.CreateDatabaseConnectionInput{
-			Name: r.FormValue("name"), Host: r.FormValue("host"), Port: port,
-			DatabaseName: r.FormValue("database_name"), Username: r.FormValue("username"),
-			DBType: r.FormValue("db_type"), SSLMode: r.FormValue("ssl_mode"),
-		}
-
-		if strings.TrimSpace(input.Name) == "" || strings.TrimSpace(input.Host) == "" {
-			data.Error = "Connection name and host are required"
-			render(w, "connection_new", data)
-			return
-		}
-
-		input.Password, err = store.EncryptSecret(r.FormValue("password"), os.Getenv("ENCRYPTION_KEY"))
-		if err != nil {
-			data.Error = "Connection encryption is not configured correctly"
-			render(w, "connection_new", data)
-			return
-		}
-
-		if err := store.CreateDatabaseConnection(r.Context(), pool, input); err != nil {
-			data.Error = "Unable to save connection, check that the name is unique"
-			render(w, "connection_new", data)
-			return
-		}
-
-		http.Redirect(w, r, "/connections", http.StatusSeeOther)
-	}
-}
-
-func placeholderHandler(title, active string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		render(w, "placeholder", pageData{Title: title, Active: active})
-	}
+	return value
 }
 
 func render(w http.ResponseWriter, page string, data pageData) {

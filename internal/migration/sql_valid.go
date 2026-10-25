@@ -34,7 +34,7 @@ func validateSQL(sql string) error {
 		for kind := range statement.Statement {
 			switch kind {
 			case "TransactionStmt":
-				return fmt.Errorf("%w: statement ke-%d mengatur transaksi; transaksi dikelola executor", InvalidInput, i+1)
+				return fmt.Errorf("%w: perintah ke-%d mengatur transaksi; biarkan aplikasi mengatur transaksi", InvalidInput, i+1)
 			case "VariableSetStmt", "DiscardStmt",
 				"ExecuteStmt",
 				"CopyStmt", "CreatedbStmt", "DropdbStmt",

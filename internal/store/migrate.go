@@ -9,29 +9,42 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 //go:embed migrations/*.up.sql
 var migrationsFS embed.FS
 
+//go:embed migrations-mariadb/*.up.sql
+var mariadbMigrationsFS embed.FS
+
 // RunMigrations applies all migration that has not been recorded yet
-func RunMigrations(ctx context.Context, pool *pgxpool.Pool) error {
+func RunMigrations(ctx context.Context, pool *DB) error {
 	if pool == nil {
 		return fmt.Errorf("Migration pool is nil")
 	}
 
-	if _, err := pool.Exec(ctx, `
+	migrationTableType := "TIMESTAMP WITH TIME ZONE"
+	if pool.Driver == "mariadb" {
+		migrationTableType = "TIMESTAMP"
+	}
+
+	if _, err := pool.DB.ExecContext(ctx, fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS schema_migrations (
 			version BIGINT PRIMARY KEY,
-			applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+			applied_at %s NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)
-	`); err != nil {
+	`, migrationTableType)); err != nil {
 		return fmt.Errorf("Create schema_migrations table: %w", err)
 	}
 
-	entries, err := fs.Glob(migrationsFS, "migrations/*.up.sql")
+	filesystem := migrationsFS
+	pattern := "migrations/*.up.sql"
+	if pool.Driver == "mariadb" {
+		filesystem = mariadbMigrationsFS
+		pattern = "migrations-mariadb/*.up.sql"
+	}
+
+	entries, err := fs.Glob(filesystem, pattern)
 	if err != nil {
 		return fmt.Errorf("List migrations: %w", err)
 	}
@@ -47,48 +60,44 @@ func RunMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 			return err
 		}
 
-		sqlBytes, err := migrationsFS.ReadFile(filename)
+		sqlBytes, err := filesystem.ReadFile(filename)
 		if err != nil {
 			return fmt.Errorf("Read migration %s: %w", filename, err)
 		}
 
-		tx, err := pool.Begin(ctx)
+		tx, err := pool.DB.BeginTx(ctx, nil)
 		if err != nil {
 			return fmt.Errorf("Begin migration %s: %w", filename, err)
 		}
 
-		if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock(817311, $1)", version); err != nil {
-			_ = tx.Rollback(ctx)
-			return fmt.Errorf("Lock migration %s: %w", filename, err)
-		}
-
 		var applied bool
-		if err := tx.QueryRow(ctx,
-			"SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE version = $1)",
-			version,
-		).Scan(&applied); err != nil {
-			_ = tx.Rollback(ctx)
+		checkQuery := pool.Rebind("SELECT COUNT(*) > 0 FROM schema_migrations WHERE version = $1")
+		if err := tx.QueryRowContext(ctx, checkQuery, version).Scan(&applied); err != nil {
+			_ = tx.Rollback()
 			return fmt.Errorf("Check migration %s: %w", filename, err)
 		}
+
 		if applied {
-			if err := tx.Commit(ctx); err != nil {
+			if err := tx.Commit(); err != nil {
 				return fmt.Errorf("Commit skipped migration %s: %w", filename, err)
 			}
 			continue
 		}
 
-		if _, err := tx.Exec(ctx, string(sqlBytes)); err != nil {
-			_ = tx.Rollback(ctx)
+		if _, err := tx.ExecContext(ctx, string(sqlBytes)); err != nil {
+			_ = tx.Rollback()
 			return fmt.Errorf("Execute migration %s: %w", filename, err)
 		}
-		if _, err := tx.Exec(ctx,
-			"INSERT INTO schema_migrations (version) VALUES ($1)",
+
+		if _, err := tx.ExecContext(ctx,
+			pool.Rebind("INSERT INTO schema_migrations (version) VALUES ($1)"),
 			version,
 		); err != nil {
-			_ = tx.Rollback(ctx)
+			_ = tx.Rollback()
 			return fmt.Errorf("Record migration %s: %w", filename, err)
 		}
-		if err := tx.Commit(ctx); err != nil {
+
+		if err := tx.Commit(); err != nil {
 			return fmt.Errorf("Commit migration %s: %w", filename, err)
 		}
 	}

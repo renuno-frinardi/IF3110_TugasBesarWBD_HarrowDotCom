@@ -1,0 +1,215 @@
+{{define "content"}}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Workspace / Connections / Explorer</p>
+    <h1>{{.Connection.Name}}</h1>
+    <p class="muted">
+      {{if .CanEditMigration}}Browse schemas and visually add, edit, or delete table records{{else}}Browse schemas and table data (read-only){{end}}
+    </p>
+  </div>
+  <div class="toolbar" style="margin-bottom:0; gap:10px;">
+    {{if .CanEditMigration}}
+    <a class="button secondary" href="/connections/migrations?id={{.Connection.ID}}&source={{.Connection.Source}}">SQL Migrations</a>
+    {{end}}
+    <a class="button secondary" href="/connections/view?id={{.Connection.ID}}&source={{.Connection.Source}}"
+      >Back to details</a
+    >
+  </div>
+</section>
+{{if .Explorer.Schemas}}
+<section class="explorer-layout">
+  <aside class="panel explorer-sidebar">
+    <h2>Schemas</h2>
+    {{range .Explorer.Schemas}}
+    <a
+      class="explorer-item {{if eq $.Explorer.SelectedSchema .}}selected{{end}}"
+      href="/connections/explore?id={{$.Connection.ID}}&source={{$.Connection.Source}}&schema={{.}}"
+      >{{.}}</a
+    >
+    {{end}}
+    <h2 class="table-heading">Tables</h2>
+    {{range .Explorer.Tables}}
+    <a
+      class="explorer-item {{if eq $.Explorer.SelectedTable .}}selected{{end}}"
+      href="/connections/explore?id={{$.Connection.ID}}&source={{$.Connection.Source}}&schema={{$.Explorer.SelectedSchema}}&table={{.}}"
+      >{{.}}</a
+    >
+    {{else}}
+    <p class="muted">No tables found.</p>
+    {{end}}
+  </aside>
+  <section class="panel explorer-content">
+    {{if .Explorer.SelectedTable}}
+    <div class="panel-heading">
+      <div>
+        <p class="eyebrow">{{.Explorer.SelectedSchema}}</p>
+        <h2>{{.Explorer.SelectedTable}}</h2>
+      </div>
+      {{if .CanEditMigration}}
+      <span class="badge green">View + Edit</span>
+      {{else}}
+      <span class="badge gray">Read only</span>
+      {{end}}
+    </div>
+
+    <div class="explorer-metadata">
+      <div>
+        <h3>Constraints</h3>
+        {{if .Explorer.Constraints}}
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Name</th><th>Type</th><th>Definition / Columns</th></tr></thead>
+            <tbody>
+              {{range .Explorer.Constraints}}
+              <tr><td>{{.Name}}</td><td>{{.Type}}</td><td>{{.Definition}}</td></tr>
+              {{end}}
+            </tbody>
+          </table>
+        </div>
+        {{else}}<p class="muted">No constraints found.</p>{{end}}
+      </div>
+      <div>
+        <h3>Indexes</h3>
+        {{if .Explorer.Indexes}}
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Name</th><th>Type</th><th>Definition / Columns</th></tr></thead>
+            <tbody>
+              {{range .Explorer.Indexes}}
+              <tr><td>{{.Name}}</td><td>{{.Type}}</td><td>{{.Definition}}</td></tr>
+              {{end}}
+            </tbody>
+          </table>
+        </div>
+        {{else}}<p class="muted">No indexes found.</p>{{end}}
+      </div>
+    </div>
+
+    {{if .Explorer.Columns}}
+    {{if .CanEditMigration}}
+    <div class="explorer-metadata" style="margin-top: 20px; margin-bottom: 20px; padding: 16px; border: 1px solid var(--line); border-radius: 8px;">
+      <h3 style="margin-top: 0;">Add New Entry (Insert Row)</h3>
+      <p class="muted" style="margin-bottom: 12px;">Leave auto-increment / default columns blank, or type <code>NULL</code> for explicit NULL values.</p>
+      <form method="post" action="/connections/explore/insert">
+        {{csrfField .CSRFToken}}
+        <input type="hidden" name="id" value="{{.Connection.ID}}" />
+        <input type="hidden" name="source" value="{{.Connection.Source}}" />
+        <input type="hidden" name="schema" value="{{.Explorer.SelectedSchema}}" />
+        <input type="hidden" name="table" value="{{.Explorer.SelectedTable}}" />
+        <input type="hidden" name="page" value="{{.Explorer.Page}}" />
+        <div class="form-grid">
+          {{range .Explorer.Columns}}
+          <label>{{.}}
+            <input name="col_{{.}}" placeholder="Default / NULL" />
+          </label>
+          {{end}}
+        </div>
+        <div class="form-actions" style="margin-top: 12px;">
+          <button class="button primary" type="submit">＋ Insert row</button>
+        </div>
+      </form>
+    </div>
+    {{end}}
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            {{range .Explorer.Columns}}
+            <th>{{.}}</th>
+            {{end}}
+            {{if .CanEditMigration}}
+            <th>Actions</th>
+            {{end}}
+          </tr>
+        </thead>
+        <tbody>
+          {{range $rowIdx, $row := .Explorer.Rows}}
+          {{if $.CanEditMigration}}
+          <tr>
+            {{range $colIdx, $val := $row}}
+            <td>
+              <input
+                 form="update-row-{{$rowIdx}}"
+                name="new_{{$colIdx}}"
+                value="{{$val}}"
+                style="min-width: 110px; padding: 6px 8px;"
+              />
+            </td>
+            {{end}}
+            <td style="white-space: nowrap;">
+              <form id="update-row-{{$rowIdx}}" method="post" action="/connections/explore/update" style="display:inline;">
+                {{csrfField $.CSRFToken}}
+                <input type="hidden" name="id" value="{{$.Connection.ID}}" />
+                <input type="hidden" name="source" value="{{$.Connection.Source}}" />
+                <input type="hidden" name="schema" value="{{$.Explorer.SelectedSchema}}" />
+                <input type="hidden" name="table" value="{{$.Explorer.SelectedTable}}" />
+                <input type="hidden" name="page" value="{{$.Explorer.Page}}" />
+                <input type="hidden" name="row_ctid" value="{{if $.Explorer.RowIDs}}{{index $.Explorer.RowIDs $rowIdx}}{{end}}" />
+                {{range $colIdx, $val := $row}}
+                <input type="hidden" name="old_{{$colIdx}}" value="{{$val}}" />
+                {{end}}
+                <button class="button secondary" type="submit">Save</button>
+              </form>
+              <form method="post" action="/connections/explore/delete" style="display:inline;" onsubmit="return confirm('Delete this row?');">
+                {{csrfField $.CSRFToken}}
+                <input type="hidden" name="id" value="{{$.Connection.ID}}" />
+                <input type="hidden" name="source" value="{{$.Connection.Source}}" />
+                <input type="hidden" name="schema" value="{{$.Explorer.SelectedSchema}}" />
+                <input type="hidden" name="table" value="{{$.Explorer.SelectedTable}}" />
+                <input type="hidden" name="page" value="{{$.Explorer.Page}}" />
+                <input type="hidden" name="row_ctid" value="{{if $.Explorer.RowIDs}}{{index $.Explorer.RowIDs $rowIdx}}{{end}}" />
+                {{range $colIdx, $val := $row}}
+                <input type="hidden" name="old_{{$colIdx}}" value="{{$val}}" />
+                {{end}}
+                <button class="button danger" type="submit">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {{else}}
+          <tr>
+            {{range $row}}
+            <td>{{.}}</td>
+            {{end}}
+          </tr>
+          {{end}}
+          {{else}}
+          <tr>
+            <td colspan="{{if .CanEditMigration}}{{add (len .Explorer.Columns) 1}}{{else}}{{len .Explorer.Columns}}{{end}}">No rows found</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    <div class="pagination">
+      {{if gt .Explorer.Page 1}}<a
+        class="button secondary"
+        href="/connections/explore?id={{.Connection.ID}}&source={{.Connection.Source}}&schema={{.Explorer.SelectedSchema}}&table={{.Explorer.SelectedTable}}&page={{subtract .Explorer.Page 1}}"
+        >Previous</a
+      >{{end}}
+      <span>Page {{.Explorer.Page}}</span>
+      {{if .Explorer.HasNextPage}}<a
+        class="button secondary"
+        href="/connections/explore?id={{.Connection.ID}}&source={{.Connection.Source}}&schema={{.Explorer.SelectedSchema}}&table={{.Explorer.SelectedTable}}&page={{add .Explorer.Page 1}}"
+        >Next</a
+      >{{end}}
+    </div>
+    {{else}}
+    <div class="empty">
+      <strong>Table is empty</strong>
+      <p>No columns or rows were returned</p>
+    </div>
+    {{end}} {{else}}
+    <div class="empty">
+      <strong>Select a table</strong>
+      <p>Choose a table from the sidebar to browse its data</p>
+    </div>
+    {{end}}
+  </section>
+</section>
+{{else}}
+<section class="panel empty">
+  <strong>No user schemas found</strong>
+  <p>The target database has no browsable schemas</p>
+</section>
+{{end}} {{end}}

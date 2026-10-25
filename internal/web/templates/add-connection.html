@@ -1,0 +1,92 @@
+{{define "content"}}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Workspace / Connections / New</p>
+    <h1>Add database connection</h1>
+    <p class="muted">
+      Store a secure connection profile for a target database.
+    </p>
+  </div>
+</section>
+<section class="panel form-panel">
+  <form method="post" action="/connections/new">
+    {{csrfField .CSRFToken}}
+    <div class="form-section">
+      <h2>Connection details</h2>
+      <p class="muted">These details identify the database in Harrow.</p>
+    </div>
+    <div class="form-grid">
+      <label
+        >Connection name<input
+          name="name"
+          required
+          maxlength="100"
+          value="{{.FormConnection.Name}}"
+          placeholder="Production database" /></label
+      ><label
+        >Database type<select id="database-type" name="db_type">
+          <option value="postgresql" {{if or (eq .FormConnection.DBType "") (eq .FormConnection.DBType "postgresql")}}selected{{end}}>PostgreSQL</option>
+          <option value="mariadb" {{if eq .FormConnection.DBType "mariadb"}}selected{{end}}>MariaDB</option>
+        </select></label
+      ><label
+        >Host<input
+          name="host"
+          required
+          maxlength="255"
+          value="{{.FormConnection.Host}}"
+          placeholder="db.example.com" /></label
+      ><label
+        >Port<input
+          id="database-port"
+          name="port"
+          type="number"
+          min="1"
+          max="65535"
+          value="{{if gt .FormConnection.Port 0}}{{.FormConnection.Port}}{{else}}5432{{end}}"
+          required /></label
+      ><label
+        >Database name<input
+          name="database_name"
+          required
+          maxlength="63"
+          value="{{.FormConnection.DatabaseName}}"
+          placeholder="application_db" /></label
+      ><label
+        >Username<input
+          name="username"
+          required
+          maxlength="63"
+          value="{{.FormConnection.Username}}"
+          placeholder="harrow_reader" /></label
+      ><label
+        >Password<input
+          name="password"
+          type="password"
+          required
+          value="{{.FormPassword}}"
+          autocomplete="new-password" /></label
+      ><label
+        >SSL mode<select name="ssl_mode">
+          <option value="prefer" {{if or (eq .FormConnection.SSLMode "") (eq .FormConnection.SSLMode "prefer")}}selected{{end}}>Prefer</option>
+          <option value="require" {{if eq .FormConnection.SSLMode "require"}}selected{{end}}>Require</option>
+          <option value="verify-full" {{if eq .FormConnection.SSLMode "verify-full"}}selected{{end}}>Verify full</option>
+          <option value="disable" {{if eq .FormConnection.SSLMode "disable"}}selected{{end}}>Disable</option>
+        </select></label
+      >
+    </div>
+    <div class="form-actions">
+      <a class="button secondary" href="/connections">Cancel</a
+      ><button class="button secondary" type="submit" formaction="/connections/test">Test connection</button
+      ><button class="button primary" type="submit">Save connection</button>
+    </div>
+  </form>
+</section>
+<script>
+  document.getElementById("database-type").addEventListener("change", function () {
+    const port = document.getElementById("database-port");
+    if (port.value === "5432" || port.value === "3306") {
+      port.value = this.value === "mariadb" ? "3306" : "5432";
+    }
+  });
+</script>
+{{end}}

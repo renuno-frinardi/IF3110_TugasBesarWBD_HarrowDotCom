@@ -1,0 +1,18 @@
+{{define "content"}}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Access control</p>
+    <h1>{{.Title}}</h1>
+    <p class="muted">Security policy enforcement</p>
+  </div>
+</section>
+<section class="panel empty">
+  <strong>{{.Title}}</strong>
+  <p>{{if .ErrorMessage}}{{.ErrorMessage}}{{else}}You do not have permission to access this resource.{{end}}</p>
+  {{if .CurrentUser}}
+  <a class="button secondary" href="/">Back to dashboard</a>
+  {{else}}
+  <a class="button primary" href="/login">Sign in</a>
+  {{end}}
+</section>
+{{end}}

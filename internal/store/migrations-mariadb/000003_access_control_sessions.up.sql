@@ -1,0 +1,16 @@
+DROP TABLE IF EXISTS sessions;
+
+CREATE TABLE IF NOT EXISTS sessions (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    id_hash BLOB NOT NULL,
+    user_id BIGINT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_seen_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    rotated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    prev_id_hash BLOB NULL,
+    prev_valid_until TIMESTAMP NULL,
+    revoked_at TIMESTAMP NULL,
+    csrf_secret BLOB NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+    UNIQUE KEY sessions_id_hash_key (id_hash(255))
+);

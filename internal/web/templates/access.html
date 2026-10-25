@@ -1,0 +1,97 @@
+{{define "content"}}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Workspace / Admin / Access Management</p>
+    <h1>Database access grants</h1>
+    <p class="muted">Grant View Only or View + Edit permissions per group and target database.</p>
+  </div>
+</section>
+
+<section class="panel form-panel" style="margin-bottom: 24px;">
+  <form method="post" action="/access/grant">
+    {{csrfField .CSRFToken}}
+    <div class="form-section">
+      <h2>Grant or update database access</h2>
+      <p class="muted">View Only permits browsing schemas, data, and migration history. View + Edit additionally permits creating and executing migrations.</p>
+    </div>
+    <div class="form-grid">
+      <label>Group
+        <select name="group_id" required>
+          {{range .Groups}}
+          <option value="{{.ID}}">{{.Name}}</option>
+          {{end}}
+        </select>
+      </label>
+      <label>Target database connection
+        <select name="database_connection_id" required>
+          {{range .Connections}}
+          <option value="{{.ID}}">{{.Name}} ({{.DatabaseName}} · {{.DBType}})</option>
+          {{end}}
+        </select>
+      </label>
+      <label>Access level
+        <select name="access_level" required>
+          <option value="view_only">View Only (DBView)</option>
+          <option value="view_edit">View + Edit (DBView + Migrations)</option>
+        </select>
+      </label>
+    </div>
+    <div class="form-actions">
+      <button class="button primary" type="submit">Save grant</button>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <p class="eyebrow">Active policies</p>
+      <h2>Group database grants</h2>
+    </div>
+  </div>
+  {{if .Grants}}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Group</th>
+          <th>Connection</th>
+          <th>Database</th>
+          <th>Level</th>
+          <th>Updated</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Grants}}
+        <tr>
+          <td><strong>{{.GroupName}}</strong></td>
+          <td>{{.ConnectionName}}</td>
+          <td>{{.DatabaseName}} <small>{{.DBType}}</small></td>
+          <td>
+            <span class="badge {{if eq (printf "%s" .AccessLevel) "view_edit"}}green{{else}}gray{{end}}">
+              {{if eq (printf "%s" .AccessLevel) "view_edit"}}View + Edit{{else}}View Only{{end}}
+            </span>
+          </td>
+          <td>{{formatTime .UpdatedAt}}</td>
+          <td>
+            <form method="post" action="/access/revoke" style="margin:0;">
+              {{csrfField $.CSRFToken}}
+              <input type="hidden" name="group_id" value="{{.GroupID}}" />
+              <input type="hidden" name="database_connection_id" value="{{.DatabaseConnectionID}}" />
+              <button class="button danger" type="submit">Revoke</button>
+            </form>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{else}}
+  <div class="empty">
+    <strong>No grants configured</strong>
+    <p>Assign a group to a database connection above to grant access.</p>
+  </div>
+  {{end}}
+</section>
+{{end}}
