@@ -43,17 +43,42 @@
   <div>
     <p class="eyebrow">Workspace / Connections</p>
     <h1>Database connections</h1>
-    <p class="muted">Manage the databases connected to your workspace.</p>
+    <p class="muted">Manage the databases connected to your workspace</p>
   </div>
   <a class="button primary" href="/connections/new"
     >Add connection <span>＋</span></a
   >
 </section>
 <section class="panel">
-  <div class="toolbar">
-    <div class="search-placeholder">⌕&nbsp; Search connections</div>
-    <button class="button secondary" type="button">Filter</button>
-  </div>
+  <form class="toolbar" method="get" action="/connections">
+    <label class="connection-search">
+      <span class="sr-only">Search connections</span>
+      <span aria-hidden="true">⌕</span>
+      <input type="search" name="search" value="{{.ConnectionSearch}}" placeholder="Search connections" />
+    </label>
+    <div class="connection-filters">
+      <label>
+        <span class="sr-only">Database type</span>
+        <select name="type">
+          <option value="">All types</option>
+          <option value="postgresql" {{if eq .ConnectionTypeFilter "postgresql"}}selected{{end}}>PostgreSQL</option>
+          <option value="mariadb" {{if eq .ConnectionTypeFilter "mariadb"}}selected{{end}}>MariaDB</option>
+        </select>
+      </label>
+      <label>
+        <span class="sr-only">Connection status</span>
+        <select name="status">
+          <option value="">All statuses</option>
+          <option value="active" {{if eq .ConnectionStatusFilter "active"}}selected{{end}}>Active</option>
+          <option value="inactive" {{if eq .ConnectionStatusFilter "inactive"}}selected{{end}}>Inactive</option>
+        </select>
+      </label>
+      <button class="button secondary" type="submit">Filter</button>
+      {{if or .ConnectionSearch .ConnectionTypeFilter .ConnectionStatusFilter}}
+      <a class="text-link" href="/connections">Clear</a>
+      {{end}}
+    </div>
+  </form>
   {{if .PostgreSQLConnections}}
   <h2>PostgreSQL connections</h2>
   {{template "connection-table" .PostgreSQLConnections}}

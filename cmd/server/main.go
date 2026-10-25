@@ -17,18 +17,21 @@ import (
 )
 
 type pageData struct {
-	Title                 string
-	Active                string
-	Error                 string
-	Success               string
-	Stats                 dashboardStats
-	Connections           []store.DatabaseConnection
-	PostgreSQLConnections []store.DatabaseConnection
-	MariaDBConnections    []store.DatabaseConnection
-	Connection            store.DatabaseConnection
-	FormConnection        store.CreateDatabaseConnectionInput
-	FormPassword          string
-	Explorer              store.ExplorerData
+	Title                  string
+	Active                 string
+	Error                  string
+	Success                string
+	Stats                  dashboardStats
+	Connections            []store.DatabaseConnection
+	PostgreSQLConnections  []store.DatabaseConnection
+	MariaDBConnections     []store.DatabaseConnection
+	Connection             store.DatabaseConnection
+	FormConnection         store.CreateDatabaseConnectionInput
+	FormPassword           string
+	Explorer               store.ExplorerData
+	ConnectionSearch       string
+	ConnectionTypeFilter   string
+	ConnectionStatusFilter string
 }
 
 type dashboardStats struct {
@@ -222,11 +225,20 @@ func connectionsHandler(stores *appStores) http.HandlerFunc {
 		postgresqlConnections = filterConnectionsByType(postgresqlConnections, "postgresql")
 		mariaDBConnections = filterConnectionsByType(mariaDBConnections, "mariadb")
 
+		search := strings.TrimSpace(r.URL.Query().Get("search"))
+		typeFilter := r.URL.Query().Get("type")
+		statusFilter := r.URL.Query().Get("status")
+		postgresqlConnections = filterConnections(postgresqlConnections, search, typeFilter, statusFilter)
+		mariaDBConnections = filterConnections(mariaDBConnections, search, typeFilter, statusFilter)
+
 		render(w, "connections", pageData{
-			Title:                 "Connections",
-			Active:                "connections",
-			PostgreSQLConnections: postgresqlConnections,
-			MariaDBConnections:    mariaDBConnections,
+			Title:                  "Connections",
+			Active:                 "connections",
+			PostgreSQLConnections:  postgresqlConnections,
+			MariaDBConnections:     mariaDBConnections,
+			ConnectionSearch:       search,
+			ConnectionTypeFilter:   typeFilter,
+			ConnectionStatusFilter: statusFilter,
 		})
 	}
 }
@@ -238,6 +250,35 @@ func filterConnectionsByType(connections []store.DatabaseConnection, dbType stri
 			filtered = append(filtered, connection)
 		}
 	}
+	return filtered
+}
+
+func filterConnections(connections []store.DatabaseConnection, search, typeFilter, statusFilter string) []store.DatabaseConnection {
+	search = strings.ToLower(strings.TrimSpace(search))
+	filtered := make([]store.DatabaseConnection, 0, len(connections))
+
+	for _, connection := range connections {
+		if typeFilter != "" && connection.DBType != typeFilter {
+			continue
+		}
+		if statusFilter == "active" && !connection.IsActive {
+			continue
+		}
+		if statusFilter == "inactive" && connection.IsActive {
+			continue
+		}
+		if search != "" {
+			matches := strings.Contains(strings.ToLower(connection.Name), search) ||
+				strings.Contains(strings.ToLower(connection.Host), search) ||
+				strings.Contains(strings.ToLower(connection.DatabaseName), search) ||
+				strings.Contains(strings.ToLower(connection.Username), search)
+			if !matches {
+				continue
+			}
+		}
+		filtered = append(filtered, connection)
+	}
+
 	return filtered
 }
 
