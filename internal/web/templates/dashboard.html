@@ -43,7 +43,7 @@
   {{if .Connections}}
   <div class="connection-grid">
     {{range .Connections}}
-    <a class="connection-card" href="/connections">
+    <a class="connection-card" href="/connections/view?id={{.ID}}&source={{.Source}}">
       <div class="connection-icon">
         {{if eq .DBType "postgresql"}}PG{{else}}DB{{end}}
       </div>
@@ -61,7 +61,9 @@
   <div class="empty">
     <strong>No connections yet</strong>
     <p>Add your first database connection to get started</p>
+    {{if .IsAdmin}}
     <a class="button secondary" href="/connections/new">Add connection</a>
+    {{end}}
   </div>
   {{end}}
 </section>

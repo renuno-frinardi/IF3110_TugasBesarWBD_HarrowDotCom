@@ -15,10 +15,17 @@ import (
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/store"
 )
 
-func (app *application) listAllowedConnections(ctx context.Context, userID int64) (pgConns, mariaConns []store.DatabaseConnection, err error) {
-	allowedMap, err := app.dbAuthorizer.ListAccessibleDatabases(ctx, userID)
-	if err != nil {
-		return nil, nil, err
+func (app *application) listAllowedConnections(ctx context.Context, user *auth.User) (pgConns, mariaConns []store.DatabaseConnection, err error) {
+	if user == nil {
+		return nil, nil, nil
+	}
+
+	var allowedMap map[int64]authz.AccessLevel
+	if !user.IsAdmin {
+		allowedMap, err = app.dbAuthorizer.ListAccessibleDatabases(ctx, user.ID)
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 
 	allPG, err := store.ListDatabaseConnections(ctx, app.stores.postgres)
@@ -26,7 +33,8 @@ func (app *application) listAllowedConnections(ctx context.Context, userID int64
 		return nil, nil, err
 	}
 	for _, c := range allPG {
-		if _, ok := allowedMap[c.ID]; ok {
+		_, hasGrant := allowedMap[c.ID]
+		if user.IsAdmin || hasGrant {
 			c.Source = c.DBType
 			if c.Source == "" {
 				c.Source = "postgresql"
@@ -42,7 +50,8 @@ func (app *application) listAllowedConnections(ctx context.Context, userID int64
 	if app.stores.mariaDB != nil {
 		if allMaria, mErr := store.ListDatabaseConnections(ctx, app.stores.mariaDB); mErr == nil {
 			for _, c := range allMaria {
-				if _, ok := allowedMap[c.ID]; ok {
+				_, hasGrant := allowedMap[c.ID]
+				if user.IsAdmin || hasGrant {
 					c.Source = "mariadb"
 					if c.DBType == "mariadb" {
 						mariaConns = append(mariaConns, c)
@@ -61,7 +70,7 @@ func (app *application) dashboardHandler(w http.ResponseWriter, r *http.Request)
 	}
 
 	user, _ := auth.UserFromContext(r.Context())
-	postgresConnections, mariaConnections, err := app.listAllowedConnections(r.Context(), user.ID)
+	postgresConnections, mariaConnections, err := app.listAllowedConnections(r.Context(), user)
 	if err != nil {
 		app.renderWithContext(w, r, "dashboard", pageData{Title: "Dashboard", Active: "dashboard", Error: "Unable to load database connections."})
 		return
@@ -92,7 +101,7 @@ func (app *application) connectionsHandler(w http.ResponseWriter, r *http.Reques
 	}
 
 	user, _ := auth.UserFromContext(r.Context())
-	postgresqlConnections, mariaDBConnections, err := app.listAllowedConnections(r.Context(), user.ID)
+	postgresqlConnections, mariaDBConnections, err := app.listAllowedConnections(r.Context(), user)
 	if err != nil {
 		app.renderWithContext(w, r, "connections", pageData{Title: "Connections", Active: "connections", Error: "Unable to load connections."})
 		return
@@ -113,7 +122,12 @@ func (app *application) connectionDetailHandler(w http.ResponseWriter, r *http.R
 		return
 	}
 	source := r.URL.Query().Get("source")
-	if !app.checkDatabasePermission(w, r, id, source, authz.ActionDBView) {
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		app.handleUnauthenticated(w, r)
+		return
+	}
+	if !user.IsAdmin && !app.checkDatabasePermission(w, r, id, source, authz.ActionDBView) {
 		return
 	}
 
