@@ -20,6 +20,12 @@ func templateFuncs() template.FuncMap {
 			}
 			return value.Local().Format("02 Jan 2006, 15:04")
 		},
+		"formatTimePtr": func(value *time.Time) string {
+			if value == nil || value.IsZero() {
+				return "-"
+			}
+			return value.Local().Format("02 Jan 2006, 15:04:05")
+		},
 		"add":      func(value, amount int) int { return value + amount },
 		"subtract": func(value, amount int) int { return value - amount },
 		"initial": func(value string) string {

@@ -93,6 +93,9 @@
           <th>SQL</th>
           <th>Status</th>
           <th>Created</th>
+          <th>Executed by</th>
+          <th>Started</th>
+          <th>Finished</th>
           <th>Error</th>
           {{if .CanEditMigration}}<th>Actions</th>{{end}}
         </tr>
@@ -107,6 +110,9 @@
             <span class="badge {{if eq .Status "executed"}}green{{else}}gray{{end}}">{{.Status}}</span>
           </td>
           <td>{{formatTime .CreatedAt}}</td>
+          <td>{{if .ExecutedByName}}{{derefString .ExecutedByName}}{{else if .ExecutedBy}}User #{{derefInt .ExecutedBy}}{{else}}-{{end}}</td>
+          <td>{{formatTimePtr .StartTime}}</td>
+          <td>{{formatTimePtr .FinishTime}}</td>
           <td>{{if .ErrorMessage}}<small>{{derefString .ErrorMessage}}</small>{{else}}-{{end}}</td>
           {{if $.CanEditMigration}}
           <td>
@@ -124,13 +130,7 @@
                   <input name="sql" required value="{{.SQL}}" />
                 </label>
                 <button class="button secondary" type="submit">Update draft</button>
-              </form>
-              <form method="post" action="/connections/migrations/execute" style="margin:0;">
-                {{csrfField $.CSRFToken}}
-                <input type="hidden" name="database_id" value="{{$.Connection.ID}}" />
-                <input type="hidden" name="source" value="{{$.Connection.Source}}" />
-                <input type="hidden" name="migration_id" value="{{.ID}}" />
-                <button class="button primary" type="submit">Execute</button>
+                <button class="button primary" type="submit" formaction="/connections/migrations/execute" onclick="return confirm('Save the SQL shown here and execute it now?')">Save &amp; Execute</button>
               </form>
             </div>
             {{else}}

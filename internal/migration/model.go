@@ -30,4 +30,6 @@ type Migration struct {
 	FinishTime *time.Time
 
 	ErrorMessage *string
+
+	ExecutedByName *string
 }

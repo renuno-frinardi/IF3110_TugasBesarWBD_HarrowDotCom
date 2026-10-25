@@ -74,12 +74,13 @@ func (app *application) renderMigrationsPage(w http.ResponseWriter, r *http.Requ
 
 func (app *application) queryMigrationsSQL(ctx context.Context, databaseID int) ([]migration.Migration, error) {
 	rows, err := app.stores.postgres.DB.QueryContext(ctx, `
-		SELECT id, database_id, version, title, sql, status,
-		       created_by, executed_by, created_at, updated_at,
-		       start_time, finish_time, error_message
-		FROM migrations
-		WHERE database_id = $1
-		ORDER BY version, created_at, id
+		SELECT m.id, m.database_id, m.version, m.title, m.sql, m.status,
+		       m.created_by, m.executed_by, m.created_at, m.updated_at,
+		       m.start_time, m.finish_time, m.error_message, u.username
+		FROM migrations m
+		LEFT JOIN users u ON u.id = m.executed_by
+		WHERE m.database_id = $1
+		ORDER BY m.version, m.created_at, m.id
 	`, databaseID)
 	if err != nil {
 		return nil, err
@@ -90,7 +91,7 @@ func (app *application) queryMigrationsSQL(ctx context.Context, databaseID int) 
 	for rows.Next() {
 		var m migration.Migration
 		if err := rows.Scan(&m.ID, &m.DatabaseID, &m.Version, &m.Title, &m.SQL, &m.Status,
-			&m.CreatedBy, &m.ExecutedBy, &m.CreatedAt, &m.UpdatedAt, &m.StartTime, &m.FinishTime, &m.ErrorMessage); err != nil {
+			&m.CreatedBy, &m.ExecutedBy, &m.CreatedAt, &m.UpdatedAt, &m.StartTime, &m.FinishTime, &m.ErrorMessage, &m.ExecutedByName); err != nil {
 			return nil, err
 		}
 		list = append(list, m)
@@ -288,6 +289,19 @@ func (app *application) migrationExecuteHandler(w http.ResponseWriter, r *http.R
 	if err != nil || m.DatabaseID != int(id) {
 		http.Error(w, "Migration not found on this database.", http.StatusNotFound)
 		return
+	}
+
+	if newSQL := strings.TrimSpace(r.FormValue("sql")); newSQL != "" && m.Status == migration.S_Draft {
+		newTitle := strings.TrimSpace(r.FormValue("title"))
+		if newTitle == "" {
+			newTitle = m.Title
+		}
+		if newSQL != m.SQL || newTitle != m.Title {
+			if _, upErr := app.migService.Update(r.Context(), int(user.ID), migID, newTitle, newSQL); upErr != nil {
+				app.renderMigrationsPage(w, r, id, source, "", "", nil, "Unable to save changes before executing; migration was not run.", "")
+				return
+			}
+		}
 	}
 
 	var result *migration.Migration

@@ -55,12 +55,13 @@ func (s *Store) GetByID(ctx context.Context, id int) (*Migration, error) {
 }
 
 func (s *Store) GetByDatabase(ctx context.Context, databaseID int) ([]Migration, error) {
-	query := `SELECT id, database_id, version, title, sql, status,
-			created_by, executed_by, created_at, updated_at,
-			start_time, finish_time, error_message
-			FROM migrations
-			WHERE database_id = $1
-			ORDER BY version, created_at, id`
+	query := `SELECT m.id, m.database_id, m.version, m.title, m.sql, m.status,
+			m.created_by, m.executed_by, m.created_at, m.updated_at,
+			m.start_time, m.finish_time, m.error_message, u.username
+			FROM migrations m
+			LEFT JOIN users u ON u.id = m.executed_by
+			WHERE m.database_id = $1
+			ORDER BY m.version, m.created_at, m.id`
 
 	rows, err := s.pool.Query(ctx, query, databaseID)
 	if err != nil {
@@ -74,7 +75,7 @@ func (s *Store) GetByDatabase(ctx context.Context, databaseID int) ([]Migration,
 		var m Migration
 
 		err := rows.Scan(&m.ID, &m.DatabaseID, &m.Version, &m.Title, &m.SQL, &m.Status, &m.CreatedBy, &m.ExecutedBy,
-			&m.CreatedAt, &m.UpdatedAt, &m.StartTime, &m.FinishTime, &m.ErrorMessage)
+			&m.CreatedAt, &m.UpdatedAt, &m.StartTime, &m.FinishTime, &m.ErrorMessage, &m.ExecutedByName)
 
 		if err != nil {
 			return nil, fmt.Errorf("Failed to read migration data: %w", err)
