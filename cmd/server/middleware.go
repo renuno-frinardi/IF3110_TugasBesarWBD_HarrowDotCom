@@ -141,9 +141,6 @@ func (app *application) checkDatabasePermission(w http.ResponseWriter, r *http.R
 		app.handleUnauthenticated(w, r)
 		return false
 	}
-	if user.IsAdmin {
-		return true
-	}
 	principal := authz.Principal{
 		UserID:   user.ID,
 		Username: user.Username,

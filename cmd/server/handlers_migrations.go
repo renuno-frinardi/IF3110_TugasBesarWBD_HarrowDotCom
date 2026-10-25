@@ -22,7 +22,7 @@ func (app *application) migrationsListHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 	source := r.URL.Query().Get("source")
-	if !app.checkDatabasePermission(w, r, id, source, authz.ActionDBView) {
+	if !app.checkMigrationPermission(w, r, id, source, authz.ActionDBView) {
 		return
 	}
 
@@ -43,13 +43,18 @@ func (app *application) renderMigrationsPage(w http.ResponseWriter, r *http.Requ
 
 	user, _ := auth.UserFromContext(r.Context())
 	principal := authz.Principal{UserID: user.ID, Username: user.Username, IsAdmin: user.IsAdmin}
-	canEdit := user.IsAdmin || app.authorizer.Can(r.Context(), principal, authz.ActionMigrationCreate, authz.Resource{DatabaseID: id, Source: source}) == nil
+	canEdit := app.authorizer.Can(r.Context(), principal, authz.ActionMigrationCreate, authz.Resource{DatabaseID: id, Source: source}) == nil
 
 	var migrationsList []migration.Migration
 	if app.migStore != nil {
-		migrationsList, _ = app.migStore.GetByDatabase(r.Context(), int(id))
+		migrationsList, err = app.migService.GetByDatabase(r.Context(), int(user.ID), int(id))
 	} else {
-		migrationsList, _ = app.queryMigrationsSQL(r.Context(), int(id))
+		migrationsList, err = app.queryMigrationsSQL(r.Context(), int(id))
+	}
+
+	if err != nil {
+		http.Error(w, "Unable to load migration history.", http.StatusInternalServerError)
+		return
 	}
 
 	app.renderWithContext(w, r, "migrations", pageData{
@@ -103,7 +108,7 @@ func (app *application) migrationCreateHandler(w http.ResponseWriter, r *http.Re
 		return
 	}
 	source := r.FormValue("source")
-	if !app.checkDatabasePermission(w, r, id, source, authz.ActionMigrationCreate) {
+	if !app.checkMigrationPermission(w, r, id, source, authz.ActionMigrationCreate) {
 		return
 	}
 
@@ -116,7 +121,7 @@ func (app *application) migrationCreateHandler(w http.ResponseWriter, r *http.Re
 
 	user, _ := auth.UserFromContext(r.Context())
 	if app.migStore != nil {
-		_, err = app.migStore.CreateDraft(r.Context(), int(id), title, sqlText, int(user.ID))
+		_, err = app.migService.CreateDraft(r.Context(), int(user.ID), int(id), title, sqlText)
 	} else {
 		_, err = app.stores.postgres.DB.ExecContext(r.Context(), `
 			INSERT INTO migrations (database_id, title, sql, status, created_by, created_at)
@@ -146,7 +151,7 @@ func (app *application) migrationUpdateHandler(w http.ResponseWriter, r *http.Re
 		return
 	}
 	source := r.FormValue("source")
-	if !app.checkDatabasePermission(w, r, id, source, authz.ActionMigrationCreate) {
+	if !app.checkMigrationPermission(w, r, id, source, authz.ActionMigrationCreate) {
 		return
 	}
 
@@ -158,7 +163,13 @@ func (app *application) migrationUpdateHandler(w http.ResponseWriter, r *http.Re
 	}
 
 	if app.migStore != nil {
-		_, err = app.migStore.Update(r.Context(), migID, title, sqlText)
+		user, _ := auth.UserFromContext(r.Context())
+		m, getErr := app.migService.GetByID(r.Context(), int(user.ID), migID)
+		if getErr != nil || m.DatabaseID != int(id) {
+			http.Error(w, "Migration not found on this database.", http.StatusNotFound)
+			return
+		}
+		_, err = app.migService.Update(r.Context(), int(user.ID), migID, title, sqlText)
 	} else {
 		res, execErr := app.stores.postgres.DB.ExecContext(r.Context(), `
 			UPDATE migrations SET title = $1, sql = $2, updated_at = NOW()
@@ -191,7 +202,7 @@ func (app *application) migrationExplainHandler(w http.ResponseWriter, r *http.R
 	}
 	source := r.FormValue("source")
 	// EXPLAIN / EXPLAIN ANALYZE is restricted to View+Edit
-	if !app.checkDatabasePermission(w, r, id, source, authz.ActionMigrationCreate) {
+	if !app.checkMigrationPermission(w, r, id, source, authz.ActionMigrationCreate) {
 		return
 	}
 
@@ -232,23 +243,46 @@ func (app *application) migrationExecuteHandler(w http.ResponseWriter, r *http.R
 		return
 	}
 	source := r.FormValue("source")
-	if !app.checkDatabasePermission(w, r, id, source, authz.ActionMigrationExecute) {
+	if !app.checkMigrationPermission(w, r, id, source, authz.ActionMigrationExecute) {
 		return
 	}
-
-	targetPool, err := app.openTargetPostgresPool(r.Context(), id, source)
-	if err != nil {
-		app.renderMigrationsPage(w, r, id, source, "", "", nil, "Unable to connect to target database.", "")
-		return
-	}
-	defer targetPool.Close()
 
 	user, _ := auth.UserFromContext(r.Context())
-	if err := explain.ExecuteMigrationTransactional(r.Context(), app.stores.postgres.DB, targetPool, migID, user.ID); err != nil {
-		app.renderMigrationsPage(w, r, id, source, "", "", nil, "Migration failed and was rolled back.", "")
+	m, err := app.migService.GetByID(r.Context(), int(user.ID), migID)
+	if err != nil || m.DatabaseID != int(id) {
+		http.Error(w, "Migration not found on this database.", http.StatusNotFound)
+		return
+	}
+
+	result, err := app.migService.Execute(r.Context(), int(user.ID), migID, app.encryptionKey)
+	if err != nil {
+		message := "Migration gagal. Periksa status dan pesan error pada riwayat."
+		if errors.Is(err, migration.InvalidInput) || errors.Is(err, migration.NotDraft) {
+			message = err.Error()
+		}
+		if errors.Is(err, migration.ExecutionPending) || (result != nil && result.Status == migration.S_Running) {
+			message = "Hasil migration perlu diperiksa. Jangan jalankan ulang SQL."
+		}
+		app.renderMigrationsPage(w, r, id, source, "", "", nil, message, "")
 		return
 	}
 
 	_ = app.adminStore.RecordAuditLog(r.Context(), &user.ID, "migration.execute", "migration", fmt.Sprintf("%d", migID), &id, nil)
 	app.renderMigrationsPage(w, r, id, source, "", "", nil, "", "Migration executed and committed successfully.")
+}
+
+func (app *application) checkMigrationPermission(w http.ResponseWriter, r *http.Request, id int64, source string, action authz.Action) bool {
+	if source != "" && source != "postgresql" {
+		http.Error(w, "Migration saat ini hanya mendukung PostgreSQL.", http.StatusBadRequest)
+		return false
+	}
+	if !app.checkDatabasePermission(w, r, id, source, action) {
+		return false
+	}
+	connection, err := store.GetDatabaseConnection(r.Context(), app.stores.postgres, id)
+	if err != nil || !connection.IsActive || connection.DBType != "postgresql" {
+		http.Error(w, "Koneksi PostgreSQL tidak tersedia atau tidak aktif.", http.StatusBadRequest)
+		return false
+	}
+	return true
 }
