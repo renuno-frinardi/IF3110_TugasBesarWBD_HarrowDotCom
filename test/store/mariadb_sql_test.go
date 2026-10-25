@@ -10,7 +10,14 @@ func TestMariaStatements(t *testing.T) {
 	if err := ValidateMariaDBStatements(statements); err != nil {
 		t.Fatal(err)
 	}
-	for _, query := range []string{"", "SELECT 'belum ditutup", "/*! COMMIT */", "SELECT 1; COMMIT;", "CREATE TABLE barang (id INT)", "SET autocommit=1"} {
+	ddl, err := MariaDBStatements("CREATE TABLE barang2 (id INT); ALTER TABLE barang2 ADD x INT; DROP TABLE barang2;")
+	if err != nil || len(ddl) != 3 {
+		t.Fatalf("DDL splitting failed: %v, %v", ddl, err)
+	}
+	if err := ValidateMariaDBStatements(ddl); err != nil {
+		t.Fatalf("DDL must be accepted: %v", err)
+	}
+	for _, query := range []string{"", "SELECT 'belum ditutup", "/*! COMMIT */", "SELECT 1; COMMIT;", "SET autocommit=1"} {
 		statements, err := MariaDBStatements(query)
 		if err == nil {
 			err = ValidateMariaDBStatements(statements)
