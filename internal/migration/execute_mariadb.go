@@ -98,6 +98,7 @@ func runMariaDBMigrationSQL(ctx context.Context, target *sql.DB, sqlText string)
 	if err != nil {
 		return S_Failed, err
 	}
+
 	if err := store.ValidateMariaDBStatements(statements); err != nil {
 		return S_Failed, err
 	}
@@ -112,7 +113,7 @@ func runMariaDBMigrationSQL(ctx context.Context, target *sql.DB, sqlText string)
 			if rollbackErr := tx.Rollback(); rollbackErr != nil {
 				return S_Running, fmt.Errorf("%w: MariaDB rollback could not be confirmed", ExecutionPending)
 			}
-			return S_Failed, fmt.Errorf("MariaDB SQL failed; changes were rolled back: %w", err)
+			return S_Failed, fmt.Errorf("MariaDB SQL failed, changes were rolled back: %w", err)
 		}
 	}
 
@@ -122,7 +123,11 @@ func runMariaDBMigrationSQL(ctx context.Context, target *sql.DB, sqlText string)
 	}
 
 	if err := tx.Commit(); err != nil {
-		return S_Running, fmt.Errorf("%w: MariaDB commit confirmation was not received; do not run the SQL again", ExecutionPending)
+		return S_Running, fmt.Errorf("%w: MariaDB commit confirmation was not received, do not run the SQL again", ExecutionPending)
 	}
 	return S_Executed, nil
+}
+
+func RunMariaDBMigrationSQL(ctx context.Context, target *sql.DB, sqlText string) (string, error) {
+	return runMariaDBMigrationSQL(ctx, target, sqlText)
 }

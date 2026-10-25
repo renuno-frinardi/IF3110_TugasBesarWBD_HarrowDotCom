@@ -20,11 +20,11 @@ type executionTestResult struct {
 
 func TestExecute(t *testing.T) {
 	pool := openTestDatabase(t)
-	service := NewService(NewStore(pool), NewDatabaseAccess(pool))
+	migrationStore := NewStore(pool)
+	service := NewService(migrationStore, NewDatabaseAccess(pool))
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	// Buat database target sementara agar SQL tes terpisah dari metadata aplikasi.
 	name := fmt.Sprintf("execute_%d", time.Now().UnixNano())
 	targetName := name + "_test"
 	_, err := pool.Exec(ctx, "CREATE DATABASE "+pgx.Identifier{targetName}.Sanitize())
@@ -134,8 +134,7 @@ func TestExecute(t *testing.T) {
 	t.Run("commit_dan_riwayat", func(t *testing.T) {
 		table := name + "_commit"
 		sql := "CREATE TABLE " + table + " (id INT); INSERT INTO " + table + " VALUES (1), (2);"
-		// Pembuat dan pelaksana sengaja berbeda untuk memeriksa executed_by.
-		draft, err := service.store.CreateDraft(ctx, databaseID, "Commit", sql, readerID)
+		draft, err := migrationStore.CreateDraft(ctx, databaseID, "Commit", sql, readerID)
 		if err != nil {
 			t.Fatal("failed to create the draft")
 		}
@@ -212,7 +211,7 @@ func TestExecute(t *testing.T) {
 				t.Fatal("a user without edit permission must not execute")
 			}
 		}
-		saved, err := service.store.GetByID(ctx, draft.ID)
+		saved, err := migrationStore.GetByID(ctx, draft.ID)
 		if err != nil || saved.Status != S_Draft || saved.Version != nil {
 			t.Fatal("a rejected request must not change the draft")
 		}
@@ -225,7 +224,7 @@ func TestExecute(t *testing.T) {
 		if m != nil || !errors.Is(err, InvalidInput) {
 			t.Fatal("user-supplied COMMIT must be rejected")
 		}
-		saved, err := service.store.GetByID(ctx, draft.ID)
+		saved, err := migrationStore.GetByID(ctx, draft.ID)
 		if err != nil || saved.Status != S_Draft || saved.Version != nil {
 			t.Fatal("SQL rejected by the validator must remain a draft")
 		}
@@ -311,7 +310,6 @@ func TestExecute(t *testing.T) {
 		table := name + "_edited"
 		newSQL := "CREATE TABLE " + table + " (id INT); INSERT INTO " + table + " VALUES (7);"
 
-		// Tahan perubahan draft agar Execute harus menunggu UPDATE ini selesai.
 		edit, err := pool.Begin(ctx)
 		if err != nil {
 			t.Fatal("failed to start editing the test draft")
@@ -391,7 +389,7 @@ func TestExecute(t *testing.T) {
 		if m != nil || !errors.Is(err, ExecutionPending) {
 			t.Fatal("a new migration must wait for the previous result to be checked")
 		}
-		saved, err := service.store.GetByID(ctx, draft.ID)
+		saved, err := migrationStore.GetByID(ctx, draft.ID)
 		if err != nil || saved.Status != S_Draft || saved.Version != nil {
 			t.Fatal("a draft awaiting review must not be executed")
 		}
@@ -412,7 +410,6 @@ func TestExecute(t *testing.T) {
 				t.Error("failed to delete the test function")
 			}
 		})
-		// Simulasikan kegagalan pencatatan hanya untuk migration milik tes ini.
 		query := fmt.Sprintf(`CREATE FUNCTION %s() RETURNS trigger LANGUAGE plpgsql AS $$
 			BEGIN
 				IF NEW.id = %d AND NEW.status = 'executed' THEN
@@ -434,7 +431,7 @@ func TestExecute(t *testing.T) {
 		if err := target.QueryRow(ctx, "SELECT COUNT(*) FROM "+table).Scan(&count); err != nil || count != 1 {
 			t.Fatal("target SQL should already be committed")
 		}
-		saved, err := service.store.GetByID(ctx, draft.ID)
+		saved, err := migrationStore.GetByID(ctx, draft.ID)
 		if err != nil || saved.Status != S_Running || saved.FinishTime != nil {
 			t.Fatal("the history must not report completion when recording fails")
 		}
