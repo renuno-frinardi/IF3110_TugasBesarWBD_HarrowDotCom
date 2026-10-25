@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"regexp"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/store"
@@ -102,6 +104,9 @@ func runMariaDBMigrationSQL(ctx context.Context, target *sql.DB, sqlText string)
 	if err := store.ValidateMariaDBStatements(statements); err != nil {
 		return S_Failed, err
 	}
+	if err := requireTransactionalTables(ctx, target, statements); err != nil {
+		return S_Failed, err
+	}
 	tx, err := target.BeginTx(ctx, nil)
 	if err != nil {
 		return S_Failed, fmt.Errorf("Failed to start the MariaDB target transaction: %w", err)
@@ -126,6 +131,39 @@ func runMariaDBMigrationSQL(ctx context.Context, target *sql.DB, sqlText string)
 		return S_Running, fmt.Errorf("%w: MariaDB commit confirmation was not received, do not run the SQL again", ExecutionPending)
 	}
 	return S_Executed, nil
+}
+
+var mariaDBTableRef = regexp.MustCompile("(?i)\\b(?:INTO|UPDATE|FROM|JOIN)\\s+(?:`?([A-Za-z0-9_$]+)`?\\.)?`?([A-Za-z0-9_$]+)`?")
+
+// Rollback hanya efektif pada engine transaksional; tabel MyISAM/Aria dkk tidak ikut dibatalkan.
+func requireTransactionalTables(ctx context.Context, target *sql.DB, statements []string) error {
+	checked := map[string]bool{}
+	for _, statement := range statements {
+		if strings.EqualFold(strings.Fields(statement)[0], "SELECT") {
+			continue
+		}
+		for _, ref := range mariaDBTableRef.FindAllStringSubmatch(statement, -1) {
+			key := ref[1] + "." + ref[2]
+			if checked[key] {
+				continue
+			}
+			checked[key] = true
+
+			var engine sql.NullString
+			err := target.QueryRowContext(ctx, `SELECT ENGINE FROM information_schema.TABLES
+				WHERE TABLE_SCHEMA = COALESCE(NULLIF(?, ''), DATABASE()) AND TABLE_NAME = ?`, ref[1], ref[2]).Scan(&engine)
+			if errors.Is(err, sql.ErrNoRows) {
+				continue // tabel tidak ada: biarkan MariaDB melaporkan errornya
+			}
+			if err != nil {
+				return fmt.Errorf("Failed to check the storage engine of table %s: %w", ref[2], err)
+			}
+			if engine.Valid && !strings.EqualFold(engine.String, "InnoDB") {
+				return fmt.Errorf("%w: table %s uses the %s engine, which does not support rollback; only InnoDB tables are allowed", InvalidInput, ref[2], engine.String)
+			}
+		}
+	}
+	return nil
 }
 
 func RunMariaDBMigrationSQL(ctx context.Context, target *sql.DB, sqlText string) (string, error) {
