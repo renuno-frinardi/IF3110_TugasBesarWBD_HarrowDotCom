@@ -128,6 +128,14 @@
                 <input type="hidden" name="migration_id" value="{{.ID}}" />
                 <button class="button primary" type="submit">Execute</button>
               </form>
+              <form method="post" action="/connections/migrations/explain" style="margin:0;">
+                {{csrfField $.CSRFToken}}
+                <input type="hidden" name="database_id" value="{{$.Connection.ID}}" />
+                <input type="hidden" name="source" value="{{$.Connection.Source}}" />
+                <input type="hidden" name="migration_id" value="{{.ID}}" />
+                <button class="button secondary" type="submit" name="analyze" value="false">EXPLAIN</button>
+                <button class="button secondary" type="submit" name="analyze" value="true">EXPLAIN ANALYZE</button>
+              </form>
             </div>
             {{else}}
             <span class="muted">Locked</span>
