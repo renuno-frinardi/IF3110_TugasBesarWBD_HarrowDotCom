@@ -13,7 +13,7 @@ import (
 // menjalankan migration SQL pada db MariaDB
 func (s *Service) ExecuteMariaDB(ctx context.Context, userID, migrationID int, target *sql.DB) (*Migration, error) {
 	if target == nil {
-		return nil, errors.New("koneksi database MariaDB belum siap")
+		return nil, errors.New("The MariaDB connection is not ready")
 	}
 
 	m, err := s.store.GetByID(ctx, migrationID)
@@ -31,12 +31,12 @@ func (s *Service) ExecuteMariaDB(ctx context.Context, userID, migrationID int, t
 
 	metadata, err := pgx.ConnectConfig(ctx, s.store.pool.Config().ConnConfig)
 	if err != nil {
-		return nil, errors.New("Gagal membuka koneksi untuk mencatat migration")
+		return nil, errors.New("Failed to open a connection to record the migration")
 	}
 	defer closeExecutionConnection(metadata)
 
 	if _, err := metadata.Exec(ctx, "SELECT pg_advisory_lock($1, $2)", executionLock, m.DatabaseID); err != nil {
-		return nil, fmt.Errorf("Gagal menunggu giliran migration: %w", err)
+		return nil, fmt.Errorf("Failed to wait for the migration turn: %w", err)
 	}
 
 	if err := s.checkAccess(ctx, userID, m.DatabaseID, true); err != nil {
@@ -54,13 +54,13 @@ func (s *Service) ExecuteMariaDB(ctx context.Context, userID, migrationID int, t
 func claimMigrationWithoutPostgresValidation(ctx context.Context, metadata *pgx.Conn, m *Migration, userID int) error {
 	tx, err := metadata.Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("Gagal menyiapkan riwayat migration: %w", err)
+		return fmt.Errorf("Failed to prepare the migration history: %w", err)
 	}
 	defer rollbackExecution(tx)
 
 	var hasRunning bool
 	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM migrations WHERE database_id = $1 AND status = 'running')`, m.DatabaseID).Scan(&hasRunning); err != nil {
-		return fmt.Errorf("Gagal memeriksa migration yang berjalan: %w", err)
+		return fmt.Errorf("Failed to check running migrations: %w", err)
 	}
 
 	if hasRunning {
@@ -84,11 +84,11 @@ func claimMigrationWithoutPostgresValidation(ctx context.Context, metadata *pgx.
 	}
 
 	if err != nil {
-		return fmt.Errorf("Gagal memulai migration: %w", err)
+		return fmt.Errorf("Failed to start the migration: %w", err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("Gagal menyimpan awal migration: %w", err)
+		return fmt.Errorf("Failed to record the migration start: %w", err)
 	}
 	return nil
 }
@@ -103,26 +103,26 @@ func runMariaDBMigrationSQL(ctx context.Context, target *sql.DB, sqlText string)
 	}
 	tx, err := target.BeginTx(ctx, nil)
 	if err != nil {
-		return S_Failed, fmt.Errorf("Gagal memulai transaksi target MariaDB: %w", err)
+		return S_Failed, fmt.Errorf("Failed to start the MariaDB target transaction: %w", err)
 	}
 
 	defer tx.Rollback()
 	for _, statement := range statements {
 		if _, err := tx.ExecContext(ctx, statement); err != nil {
 			if rollbackErr := tx.Rollback(); rollbackErr != nil {
-				return S_Running, fmt.Errorf("%w: rollback MariaDB belum dapat dipastikan", ExecutionPending)
+				return S_Running, fmt.Errorf("%w: MariaDB rollback could not be confirmed", ExecutionPending)
 			}
-			return S_Failed, fmt.Errorf("SQL MariaDB gagal, perubahan dibatalkan: %w", err)
+			return S_Failed, fmt.Errorf("MariaDB SQL failed; changes were rolled back: %w", err)
 		}
 	}
 
 	if err := ctx.Err(); err != nil {
 		_ = tx.Rollback()
-		return S_Failed, fmt.Errorf("Eksekusi migration dibatalkan: %w", err)
+		return S_Failed, fmt.Errorf("Migration execution was canceled: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
-		return S_Running, fmt.Errorf("%w: konfirmasi commit MariaDB tidak diterima; jangan jalankan SQL ulang", ExecutionPending)
+		return S_Running, fmt.Errorf("%w: MariaDB commit confirmation was not received; do not run the SQL again", ExecutionPending)
 	}
 	return S_Executed, nil
 }

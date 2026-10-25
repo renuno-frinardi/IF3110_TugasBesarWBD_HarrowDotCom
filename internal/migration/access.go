@@ -34,7 +34,7 @@ func (d *DatabaseAccess) CanAccess(ctx context.Context, userID int, databaseID i
 	err := d.pool.QueryRow(ctx, query, userID, databaseID, needEdit).Scan(&allowed)
 
 	if err != nil {
-		return false, fmt.Errorf("gagal memeriksa akses database: %w", err)
+		return false, fmt.Errorf("Failed to check database access: %w", err)
 	}
 
 	return allowed, nil

@@ -14,10 +14,10 @@ import (
 	"github.com/pganalyze/pg_query_go/v6"
 )
 
-const NotApplicableMessage = "tidak berlaku"
+const NotApplicableMessage = "Not applicable"
 
 var ErrEmptyQuery = errors.New("SQL query cannot be empty")
-var ErrMultipleStatements = errors.New("EXPLAIN hanya mendukung satu statement SQL")
+var ErrMultipleStatements = errors.New("EXPLAIN only supports one SQL statement")
 
 // Menyimpan hasil statement SQL
 type Result struct {

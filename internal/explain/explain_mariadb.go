@@ -21,13 +21,13 @@ func ExplainMariaDB(ctx context.Context, target *sql.DB, sqlText string, analyze
 	switch strings.ToUpper(strings.Fields(statement)[0]) {
 	case "SELECT", "UPDATE", "DELETE":
 	case "INSERT", "CREATE", "ALTER", "DROP", "TRUNCATE":
-		message := "EXPLAIN MariaDB mendukung SELECT, UPDATE, dan DELETE."
+		message := "MariaDB EXPLAIN supports SELECT, UPDATE, and DELETE."
 		return &Result{SQL: sqlText, Analyze: analyze, NotApplicable: true, Message: message, PlanLines: []string{message}}, nil
 	default:
-		return nil, errors.New("EXPLAIN MariaDB mendukung SELECT, UPDATE, dan DELETE")
+		return nil, errors.New("MariaDB EXPLAIN supports SELECT, UPDATE, and DELETE")
 	}
 	if target == nil {
-		return nil, errors.New("koneksi MariaDB belum siap")
+		return nil, errors.New("The MariaDB connection is not ready")
 	}
 	tx, err := target.BeginTx(ctx, nil)
 	if err != nil {

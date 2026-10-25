@@ -50,7 +50,7 @@
       <h2>{{if .ExplainResult.Analyze}}{{if eq .Connection.DBType "postgresql"}}EXPLAIN ANALYZE{{else}}ANALYZE{{end}}{{if not .ExplainResult.NotApplicable}} (Rolled Back){{end}}{{else}}EXPLAIN{{end}}</h2>
     </div>
     <span class="badge {{if .ExplainResult.NotApplicable}}gray{{else}}green{{end}}">
-      {{if .ExplainResult.NotApplicable}}tidak berlaku{{else}}Plan generated{{end}}
+      {{if .ExplainResult.NotApplicable}}Not applicable{{else}}Plan generated{{end}}
     </span>
   </div>
   <p class="muted">SQL: <strong>{{.ExplainResult.SQL}}</strong></p>

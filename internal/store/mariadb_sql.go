@@ -12,7 +12,7 @@ func MariaDBStatements(sqlText string) ([]string, error) {
 	for i := 0; i < len(sqlText); i++ {
 		c := sqlText[i]
 		if c == '\\' {
-			return nil, errors.New("backslash belum didukung; gunakan dua tanda petik untuk apostrof")
+			return nil, errors.New("Backslashes are not supported; use two single quotes for an apostrophe")
 		}
 		if quote != 0 {
 			current.WriteByte(c)
@@ -35,7 +35,7 @@ func MariaDBStatements(sqlText string) ([]string, error) {
 		}
 		if c == '/' && i+1 < len(sqlText) && sqlText[i+1] == '*' {
 			// MariaDB bisa menjalankan SQL di dalam komentar /*! ... */.
-			return nil, errors.New("gunakan komentar -- untuk SQL MariaDB")
+			return nil, errors.New("Use -- comments for MariaDB SQL")
 		}
 		switch c {
 		case '\'', '"', '`':
@@ -51,13 +51,13 @@ func MariaDBStatements(sqlText string) ([]string, error) {
 		}
 	}
 	if quote != 0 {
-		return nil, errors.New("tanda petik SQL belum ditutup")
+		return nil, errors.New("SQL quote is not closed")
 	}
 	if text := strings.TrimSpace(current.String()); text != "" {
 		statements = append(statements, text)
 	}
 	if len(statements) == 0 {
-		return nil, errors.New("SQL harus diisi")
+		return nil, errors.New("SQL is required")
 	}
 	return statements, nil
 }
@@ -68,7 +68,7 @@ func ValidateMariaDBStatements(statements []string) error {
 		switch strings.ToUpper(strings.Fields(statement)[0]) {
 		case "SELECT", "INSERT", "UPDATE", "DELETE":
 		default:
-			return errors.New("migration MariaDB mendukung SELECT, INSERT, UPDATE, dan DELETE; CREATE/ALTER/DROP tidak dapat di-rollback")
+			return errors.New("MariaDB migrations support SELECT, INSERT, UPDATE, and DELETE; CREATE/ALTER/DROP cannot be rolled back")
 		}
 	}
 	return nil
