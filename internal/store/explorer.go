@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
+	"unicode/utf8"
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -18,6 +20,7 @@ type ExplorerData struct {
 	SelectedTable  string
 	Columns        []string
 	Rows           [][]string
+	RowIDs         []string
 	Constraints    []TableConstraint
 	Indexes        []TableIndex
 	Page           int
@@ -355,31 +358,58 @@ func ListPostgresIndexes(ctx context.Context, target *pgxpool.Pool, schema, tabl
 	return indexes, nil
 }
 
+func formatPostgresValue(value any) string {
+	if value == nil {
+		return "NULL"
+	}
+	switch v := value.(type) {
+	case time.Time:
+		return v.Format("2006-01-02 15:04:05.999999Z07:00")
+	case [16]byte:
+		return fmt.Sprintf("%x-%x-%x-%x-%x", v[0:4], v[4:6], v[6:8], v[8:10], v[10:16])
+	case []byte:
+		if utf8.Valid(v) {
+			return string(v)
+		}
+		return fmt.Sprintf("\\x%x", v)
+	default:
+		return fmt.Sprint(value)
+	}
+}
+
 func ReadPostgresTable(ctx context.Context, target *pgxpool.Pool, schema, table string, page int) (columns []string, values [][]string, hasNext bool, err error) {
+	columns, values, _, hasNext, err = ReadPostgresTableWithRowIDs(ctx, target, schema, table, page)
+	return columns, values, hasNext, err
+}
+
+func ReadPostgresTableWithRowIDs(ctx context.Context, target *pgxpool.Pool, schema, table string, page int) (columns []string, values [][]string, rowIDs []string, hasNext bool, err error) {
 	if page < 1 {
 		page = 1
 	}
 
 	const pageSize = 50
 	rows, err := target.Query(ctx, fmt.Sprintf(
-		"SELECT * FROM %s.%s LIMIT %d OFFSET %d",
+		"SELECT ctid::text, * FROM %s.%s LIMIT %d OFFSET %d",
 		quoteIdentifier(schema), quoteIdentifier(table), pageSize+1, (page-1)*pageSize,
 	))
 
 	if err != nil {
-		return nil, nil, false, fmt.Errorf("Read target table: %w", err)
+		return nil, nil, nil, false, fmt.Errorf("Read target table: %w", err)
 	}
 	defer rows.Close()
 
 	fieldDescriptions := rows.FieldDescriptions()
-	for _, field := range fieldDescriptions {
+	for i, field := range fieldDescriptions {
+		if i == 0 {
+			continue // skip ctid::text column
+		}
 		columns = append(columns, string(field.Name))
 	}
 
 	for rows.Next() {
 		raw, err := rows.Values()
 		if err != nil {
-			return nil, nil, false, fmt.Errorf("Read target row: %w", err)
+			return nil, nil, nil, false, fmt.Errorf("Read target row: %w", err)
 		}
 
 		if len(values) == pageSize {
@@ -387,17 +417,18 @@ func ReadPostgresTable(ctx context.Context, target *pgxpool.Pool, schema, table 
 			break
 		}
 
+		if len(raw) > 0 {
+			rowIDs = append(rowIDs, fmt.Sprint(raw[0]))
+			raw = raw[1:]
+		}
+
 		row := make([]string, len(raw))
 		for i, value := range raw {
-			if value == nil {
-				row[i] = "NULL"
-			} else {
-				row[i] = fmt.Sprint(value)
-			}
+			row[i] = formatPostgresValue(value)
 		}
 		values = append(values, row)
 	}
-	return columns, values, hasNext, rows.Err()
+	return columns, values, rowIDs, hasNext, rows.Err()
 }
 
 func quoteIdentifier(identifier string) string {
@@ -411,3 +442,320 @@ func ParsePageNumber(value string) int {
 	}
 	return page
 }
+
+func postgresColumnUDTMap(ctx context.Context, target *pgxpool.Pool, schema, table string) (map[string]string, error) {
+	rows, err := target.Query(ctx, `
+		SELECT column_name, udt_name
+		FROM information_schema.columns
+		WHERE table_schema = $1 AND table_name = $2
+	`, schema, table)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string]string)
+	for rows.Next() {
+		var col, udt string
+		if err := rows.Scan(&col, &udt); err != nil {
+			return nil, err
+		}
+		result[col] = udt
+	}
+	return result, rows.Err()
+}
+
+func isSafeUDTName(udt string) bool {
+	if udt == "" {
+		return false
+	}
+	for _, r := range udt {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_') {
+			return false
+		}
+	}
+	return true
+}
+
+func InsertPostgresRow(ctx context.Context, target *pgxpool.Pool, schema, table string, columns []string, inputValues map[string]string) error {
+	udtMap, err := postgresColumnUDTMap(ctx, target, schema, table)
+	if err != nil {
+		return fmt.Errorf("read column types: %w", err)
+	}
+
+	var insertCols []string
+	var placeholders []string
+	var args []any
+	argIdx := 1
+
+	for _, col := range columns {
+		rawVal, exists := inputValues[col]
+		if !exists || strings.TrimSpace(rawVal) == "" {
+			continue
+		}
+		insertCols = append(insertCols, quoteIdentifier(col))
+		if strings.EqualFold(strings.TrimSpace(rawVal), "NULL") {
+			placeholders = append(placeholders, "NULL")
+			continue
+		}
+		udt := udtMap[col]
+		if isSafeUDTName(udt) {
+			placeholders = append(placeholders, fmt.Sprintf("$%d::text::%s", argIdx, quoteIdentifier(udt)))
+		} else {
+			placeholders = append(placeholders, fmt.Sprintf("$%d::text", argIdx))
+		}
+		args = append(args, rawVal)
+		argIdx++
+	}
+
+	var query string
+	if len(insertCols) == 0 {
+		query = fmt.Sprintf("INSERT INTO %s.%s DEFAULT VALUES", quoteIdentifier(schema), quoteIdentifier(table))
+	} else {
+		query = fmt.Sprintf(
+			"INSERT INTO %s.%s (%s) VALUES (%s)",
+			quoteIdentifier(schema),
+			quoteIdentifier(table),
+			strings.Join(insertCols, ", "),
+			strings.Join(placeholders, ", "),
+		)
+	}
+
+	_, err = target.Exec(ctx, query, args...)
+	return err
+}
+
+func UpdatePostgresRow(ctx context.Context, target *pgxpool.Pool, schema, table string, columns []string, rowCTID string, oldValues, newValues []string) error {
+	if len(columns) == 0 || len(oldValues) != len(columns) || len(newValues) != len(columns) {
+		return fmt.Errorf("column count mismatch")
+	}
+
+	udtMap, err := postgresColumnUDTMap(ctx, target, schema, table)
+	if err != nil {
+		return fmt.Errorf("read column types: %w", err)
+	}
+
+	var setClauses []string
+	var args []any
+	argIdx := 1
+
+	for i, col := range columns {
+		if oldValues[i] == newValues[i] {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(newValues[i]), "NULL") {
+			setClauses = append(setClauses, fmt.Sprintf("%s = NULL", quoteIdentifier(col)))
+			continue
+		}
+		udt := udtMap[col]
+		if isSafeUDTName(udt) {
+			setClauses = append(setClauses, fmt.Sprintf("%s = $%d::text::%s", quoteIdentifier(col), argIdx, quoteIdentifier(udt)))
+		} else {
+			setClauses = append(setClauses, fmt.Sprintf("%s = $%d::text", quoteIdentifier(col), argIdx))
+		}
+		args = append(args, newValues[i])
+		argIdx++
+	}
+
+	if len(setClauses) == 0 {
+		return nil
+	}
+
+	var query string
+	if strings.TrimSpace(rowCTID) != "" {
+		args = append(args, strings.TrimSpace(rowCTID))
+		query = fmt.Sprintf(
+			"UPDATE %s.%s SET %s WHERE ctid = $%d::text::tid",
+			quoteIdentifier(schema),
+			quoteIdentifier(table),
+			strings.Join(setClauses, ", "),
+			argIdx,
+		)
+	} else {
+		var whereClauses []string
+		for i, col := range columns {
+			if oldValues[i] == "NULL" {
+				whereClauses = append(whereClauses, fmt.Sprintf("%s IS NULL", quoteIdentifier(col)))
+			} else {
+				whereClauses = append(whereClauses, fmt.Sprintf("%s::text = $%d::text", quoteIdentifier(col), argIdx))
+				args = append(args, oldValues[i])
+				argIdx++
+			}
+		}
+		query = fmt.Sprintf(
+			"UPDATE %s.%s SET %s WHERE ctid = (SELECT ctid FROM %s.%s WHERE %s LIMIT 1)",
+			quoteIdentifier(schema),
+			quoteIdentifier(table),
+			strings.Join(setClauses, ", "),
+			quoteIdentifier(schema),
+			quoteIdentifier(table),
+			strings.Join(whereClauses, " AND "),
+		)
+	}
+
+	tag, err := target.Exec(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("no matching row found to update")
+	}
+	return nil
+}
+
+func DeletePostgresRow(ctx context.Context, target *pgxpool.Pool, schema, table string, columns []string, rowCTID string, oldValues []string) error {
+	if len(columns) == 0 || len(oldValues) != len(columns) {
+		return fmt.Errorf("column count mismatch")
+	}
+
+	var query string
+	var args []any
+	if strings.TrimSpace(rowCTID) != "" {
+		args = append(args, strings.TrimSpace(rowCTID))
+		query = fmt.Sprintf(
+			"DELETE FROM %s.%s WHERE ctid = $1::text::tid",
+			quoteIdentifier(schema),
+			quoteIdentifier(table),
+		)
+	} else {
+		var whereClauses []string
+		argIdx := 1
+		for i, col := range columns {
+			if oldValues[i] == "NULL" {
+				whereClauses = append(whereClauses, fmt.Sprintf("%s IS NULL", quoteIdentifier(col)))
+			} else {
+				whereClauses = append(whereClauses, fmt.Sprintf("%s::text = $%d::text", quoteIdentifier(col), argIdx))
+				args = append(args, oldValues[i])
+				argIdx++
+			}
+		}
+		query = fmt.Sprintf(
+			"DELETE FROM %s.%s WHERE ctid = (SELECT ctid FROM %s.%s WHERE %s LIMIT 1)",
+			quoteIdentifier(schema),
+			quoteIdentifier(table),
+			quoteIdentifier(schema),
+			quoteIdentifier(table),
+			strings.Join(whereClauses, " AND "),
+		)
+	}
+
+	tag, err := target.Exec(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("no matching row found to delete")
+	}
+	return nil
+}
+
+func InsertMariaDBRow(ctx context.Context, target *sql.DB, schema, table string, columns []string, inputValues map[string]string) error {
+	var insertCols []string
+	var placeholders []string
+	var args []any
+
+	for _, col := range columns {
+		rawVal, exists := inputValues[col]
+		if !exists || strings.TrimSpace(rawVal) == "" {
+			continue
+		}
+		insertCols = append(insertCols, quoteMariaDBIdentifier(col))
+		if strings.EqualFold(strings.TrimSpace(rawVal), "NULL") {
+			placeholders = append(placeholders, "NULL")
+			continue
+		}
+		placeholders = append(placeholders, "?")
+		args = append(args, rawVal)
+	}
+
+	var query string
+	if len(insertCols) == 0 {
+		query = fmt.Sprintf("INSERT INTO %s.%s () VALUES ()", quoteMariaDBIdentifier(schema), quoteMariaDBIdentifier(table))
+	} else {
+		query = fmt.Sprintf(
+			"INSERT INTO %s.%s (%s) VALUES (%s)",
+			quoteMariaDBIdentifier(schema),
+			quoteMariaDBIdentifier(table),
+			strings.Join(insertCols, ", "),
+			strings.Join(placeholders, ", "),
+		)
+	}
+
+	_, err := target.ExecContext(ctx, query, args...)
+	return err
+}
+
+func UpdateMariaDBRow(ctx context.Context, target *sql.DB, schema, table string, columns []string, oldValues, newValues []string) error {
+	if len(columns) == 0 || len(oldValues) != len(columns) || len(newValues) != len(columns) {
+		return fmt.Errorf("column count mismatch")
+	}
+
+	var setClauses []string
+	var args []any
+
+	for i, col := range columns {
+		if oldValues[i] == newValues[i] {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(newValues[i]), "NULL") {
+			setClauses = append(setClauses, fmt.Sprintf("%s = NULL", quoteMariaDBIdentifier(col)))
+			continue
+		}
+		setClauses = append(setClauses, fmt.Sprintf("%s = ?", quoteMariaDBIdentifier(col)))
+		args = append(args, newValues[i])
+	}
+
+	if len(setClauses) == 0 {
+		return nil
+	}
+
+	var whereClauses []string
+	for i, col := range columns {
+		if oldValues[i] == "NULL" {
+			whereClauses = append(whereClauses, fmt.Sprintf("%s IS NULL", quoteMariaDBIdentifier(col)))
+		} else {
+			whereClauses = append(whereClauses, fmt.Sprintf("CAST(%s AS CHAR) = ?", quoteMariaDBIdentifier(col)))
+			args = append(args, oldValues[i])
+		}
+	}
+
+	query := fmt.Sprintf(
+		"UPDATE %s.%s SET %s WHERE %s LIMIT 1",
+		quoteMariaDBIdentifier(schema),
+		quoteMariaDBIdentifier(table),
+		strings.Join(setClauses, ", "),
+		strings.Join(whereClauses, " AND "),
+	)
+
+	_, err := target.ExecContext(ctx, query, args...)
+	return err
+}
+
+func DeleteMariaDBRow(ctx context.Context, target *sql.DB, schema, table string, columns []string, oldValues []string) error {
+	if len(columns) == 0 || len(oldValues) != len(columns) {
+		return fmt.Errorf("column count mismatch")
+	}
+
+	var whereClauses []string
+	var args []any
+
+	for i, col := range columns {
+		if oldValues[i] == "NULL" {
+			whereClauses = append(whereClauses, fmt.Sprintf("%s IS NULL", quoteMariaDBIdentifier(col)))
+		} else {
+			whereClauses = append(whereClauses, fmt.Sprintf("CAST(%s AS CHAR) = ?", quoteMariaDBIdentifier(col)))
+			args = append(args, oldValues[i])
+		}
+	}
+
+	query := fmt.Sprintf(
+		"DELETE FROM %s.%s WHERE %s LIMIT 1",
+		quoteMariaDBIdentifier(schema),
+		quoteMariaDBIdentifier(table),
+		strings.Join(whereClauses, " AND "),
+	)
+
+	_, err := target.ExecContext(ctx, query, args...)
+	return err
+}
+

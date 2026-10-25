@@ -79,6 +79,16 @@ func (app *application) dashboardHandler(w http.ResponseWriter, r *http.Request)
 	}
 	connections := append(postgresConnections, mariaConnections...)
 
+	var editableConnections []store.DatabaseConnection
+	if user != nil {
+		allowedMap, _ := app.dbAuthorizer.ListAccessibleDatabases(r.Context(), user.ID)
+		for _, c := range connections {
+			if user.IsAdmin || allowedMap[c.ID] == authz.LevelViewEdit {
+				editableConnections = append(editableConnections, c)
+			}
+		}
+	}
+
 	stats := dashboardStats{Connections: len(connections)}
 	stats.Users, _ = store.CountRecords(r.Context(), app.stores.postgres, "users")
 	stats.Groups, _ = store.CountRecords(r.Context(), app.stores.postgres, "user_groups")
@@ -89,10 +99,11 @@ func (app *application) dashboardHandler(w http.ResponseWriter, r *http.Request)
 	}
 
 	app.renderWithContext(w, r, "dashboard", pageData{
-		Title:       "Dashboard",
-		Active:      "dashboard",
-		Stats:       stats,
-		Connections: connections,
+		Title:               "Dashboard",
+		Active:              "dashboard",
+		Stats:               stats,
+		Connections:         connections,
+		EditableConnections: editableConnections,
 	})
 }
 
@@ -200,7 +211,12 @@ func (app *application) exploreConnectionHandler(w http.ResponseWriter, r *http.
 	}
 
 	source := r.URL.Query().Get("source")
-	if !app.checkDatabasePermission(w, r, id, source, authz.ActionDBView) {
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		app.handleUnauthenticated(w, r)
+		return
+	}
+	if !user.IsAdmin && !app.checkDatabasePermission(w, r, id, source, authz.ActionDBView) {
 		return
 	}
 
@@ -264,6 +280,9 @@ func (app *application) exploreConnectionHandler(w http.ResponseWriter, r *http.
 
 	if err == nil {
 		explorer.SelectedTable = r.URL.Query().Get("table")
+		if explorer.SelectedTable == "" && len(explorer.Tables) > 0 {
+			explorer.SelectedTable = explorer.Tables[0]
+		}
 		if explorer.SelectedTable != "" {
 			if !contains(explorer.Tables, explorer.SelectedTable) {
 				http.Error(w, "invalid table", http.StatusBadRequest)
@@ -274,24 +293,36 @@ func (app *application) exploreConnectionHandler(w http.ResponseWriter, r *http.
 				explorer.Indexes, err = store.ListPostgresIndexes(r.Context(), target, explorer.SelectedSchema, explorer.SelectedTable)
 			}
 			if err == nil {
-				explorer.Columns, explorer.Rows, explorer.HasNextPage, err = store.ReadPostgresTable(r.Context(), target, explorer.SelectedSchema, explorer.SelectedTable, explorer.Page)
+				explorer.Columns, explorer.Rows, explorer.RowIDs, explorer.HasNextPage, err = store.ReadPostgresTableWithRowIDs(r.Context(), target, explorer.SelectedSchema, explorer.SelectedTable, explorer.Page)
 			}
 		}
 	}
 
+	principal := authz.Principal{UserID: user.ID, Username: user.Username, IsAdmin: user.IsAdmin}
+	canEdit := user.IsAdmin || app.authorizer.Can(r.Context(), principal, authz.ActionMigrationExecute, authz.Resource{DatabaseID: id, Source: source}) == nil
+
 	if err != nil {
 		app.logger.Printf("Read target database metadata failed for connection %d: %v", connection.ID, err)
 		explorerError := pageData{
-			Title:      "Database explorer",
-			Active:     "connections",
-			Connection: connection,
-			Explorer:   explorer,
-			Error:      "Unable to read the target database, please check the connection settings and permissions",
+			Title:            "Database explorer",
+			Active:           "connections",
+			Connection:       connection,
+			Explorer:         explorer,
+			CanEditMigration: canEdit,
+			Error:            "Unable to read the target database, please check the connection settings and permissions",
 		}
 		app.renderWithContext(w, r, "connection-explorer", explorerError)
 		return
 	}
-	app.renderWithContext(w, r, "connection-explorer", pageData{Title: "Database explorer", Active: "connections", Connection: connection, Explorer: explorer})
+	app.renderWithContext(w, r, "connection-explorer", pageData{
+		Title:            "Database explorer",
+		Active:           "connections",
+		Connection:       connection,
+		Explorer:         explorer,
+		CanEditMigration: canEdit,
+		Error:            r.URL.Query().Get("error"),
+		Success:          r.URL.Query().Get("success"),
+	})
 }
 
 func (app *application) exploreMariaDBConnection(w http.ResponseWriter, r *http.Request, connection store.DatabaseConnection, encryptedPassword []byte) {
@@ -318,6 +349,9 @@ func (app *application) exploreMariaDBConnection(w http.ResponseWriter, r *http.
 
 	if err == nil {
 		explorer.SelectedTable = r.URL.Query().Get("table")
+		if explorer.SelectedTable == "" && len(explorer.Tables) > 0 {
+			explorer.SelectedTable = explorer.Tables[0]
+		}
 		if explorer.SelectedTable != "" {
 			if !contains(explorer.Tables, explorer.SelectedTable) {
 				http.Error(w, "invalid table", http.StatusBadRequest)
@@ -333,16 +367,382 @@ func (app *application) exploreMariaDBConnection(w http.ResponseWriter, r *http.
 		}
 	}
 
+	user, _ := auth.UserFromContext(r.Context())
+	principal := authz.Principal{UserID: user.ID, Username: user.Username, IsAdmin: user.IsAdmin}
+	canEdit := user.IsAdmin || app.authorizer.Can(r.Context(), principal, authz.ActionMigrationExecute, authz.Resource{DatabaseID: connection.ID, Source: connection.Source}) == nil
+
 	if err != nil {
 		app.logger.Printf("Read MariaDB target metadata failed for connection %d: %v", connection.ID, err)
 		app.renderWithContext(w, r, "connection-explorer", pageData{
-			Title: "Database explorer", Active: "connections", Connection: connection, Explorer: explorer,
+			Title: "Database explorer", Active: "connections", Connection: connection, Explorer: explorer, CanEditMigration: canEdit,
 			Error: "Unable to read the target database, please check the connection settings and permissions",
 		})
 		return
 	}
 
-	app.renderWithContext(w, r, "connection-explorer", pageData{Title: "Database explorer", Active: "connections", Connection: connection, Explorer: explorer})
+	app.renderWithContext(w, r, "connection-explorer", pageData{
+		Title:            "Database explorer",
+		Active:           "connections",
+		Connection:       connection,
+		Explorer:         explorer,
+		CanEditMigration: canEdit,
+		Error:            r.URL.Query().Get("error"),
+		Success:          r.URL.Query().Get("success"),
+	})
+}
+
+func explorerRedirectURL(id int64, source, schema, table, page, errMsg, successMsg string) string {
+	u := fmt.Sprintf(
+		"/connections/explore?id=%d&source=%s&schema=%s&table=%s&page=%s",
+		id,
+		url.QueryEscape(source),
+		url.QueryEscape(schema),
+		url.QueryEscape(table),
+		url.QueryEscape(page),
+	)
+	if errMsg != "" {
+		u += "&error=" + url.QueryEscape(errMsg)
+	}
+	if successMsg != "" {
+		u += "&success=" + url.QueryEscape(successMsg)
+	}
+	return u
+}
+
+func (app *application) exploreInsertRowHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form submission", http.StatusBadRequest)
+		return
+	}
+
+	id, err := strconv.ParseInt(r.FormValue("id"), 10, 64)
+	if err != nil || id < 1 {
+		http.Error(w, "invalid connection id", http.StatusBadRequest)
+		return
+	}
+	source := r.FormValue("source")
+	schema := r.FormValue("schema")
+	table := r.FormValue("table")
+	page := r.FormValue("page")
+	if page == "" {
+		page = "1"
+	}
+
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		app.handleUnauthenticated(w, r)
+		return
+	}
+	if !user.IsAdmin && !app.checkDatabasePermission(w, r, id, source, authz.ActionMigrationExecute) {
+		return
+	}
+
+	db := app.stores.forType(source)
+	connection, err := store.GetDatabaseConnection(r.Context(), db, id)
+	if err != nil || !connection.IsActive {
+		http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Database connection is unavailable or inactive.", ""), http.StatusSeeOther)
+		return
+	}
+	encPass, err := store.GetEncryptedPassword(r.Context(), db, id)
+	if err != nil {
+		http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to read database credentials.", ""), http.StatusSeeOther)
+		return
+	}
+
+	var execErr error
+	if connection.DBType == "mariadb" {
+		target, openErr := store.OpenMariaDBTarget(r.Context(), connection, encPass, app.encryptionKeyOrEnv())
+		if openErr != nil {
+			http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to connect to MariaDB target.", ""), http.StatusSeeOther)
+			return
+		}
+		defer target.Close()
+
+		schemas, _ := store.ListMariaDBSchemas(r.Context(), target)
+		tables, _ := store.ListMariaDBTables(r.Context(), target, schema)
+		if !contains(schemas, schema) || !contains(tables, table) {
+			http.Error(w, "invalid schema or table", http.StatusBadRequest)
+			return
+		}
+		cols, _, _, colErr := store.ReadMariaDBTable(r.Context(), target, schema, table, 1)
+		if colErr != nil {
+			http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to inspect table columns.", ""), http.StatusSeeOther)
+			return
+		}
+		inputValues := make(map[string]string, len(cols))
+		for _, c := range cols {
+			inputValues[c] = r.FormValue("col_" + c)
+		}
+		execErr = store.InsertMariaDBRow(r.Context(), target, schema, table, cols, inputValues)
+	} else {
+		cfg, cfgErr := app.postgresTargetPoolConfig(connection, encPass)
+		if cfgErr != nil {
+			http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Invalid target configuration.", ""), http.StatusSeeOther)
+			return
+		}
+		target, poolErr := pgxpool.NewWithConfig(r.Context(), cfg)
+		if poolErr != nil {
+			http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to connect to PostgreSQL target.", ""), http.StatusSeeOther)
+			return
+		}
+		defer target.Close()
+
+		schemas, _ := store.ListPostgresSchemas(r.Context(), target)
+		tables, _ := store.ListPostgresTables(r.Context(), target, schema)
+		if !contains(schemas, schema) || !contains(tables, table) {
+			http.Error(w, "invalid schema or table", http.StatusBadRequest)
+			return
+		}
+		cols, _, _, colErr := store.ReadPostgresTable(r.Context(), target, schema, table, 1)
+		if colErr != nil {
+			http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to inspect table columns.", ""), http.StatusSeeOther)
+			return
+		}
+		inputValues := make(map[string]string, len(cols))
+		for _, c := range cols {
+			inputValues[c] = r.FormValue("col_" + c)
+		}
+		execErr = store.InsertPostgresRow(r.Context(), target, schema, table, cols, inputValues)
+	}
+
+	if execErr != nil {
+		app.logger.Printf("Insert row failed on connection %d (%s.%s): %v", id, schema, table, execErr)
+		http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Failed to insert row: "+execErr.Error(), ""), http.StatusSeeOther)
+		return
+	}
+
+	_ = app.adminStore.RecordAuditLog(r.Context(), &user.ID, "data.insert_row", "table", schema+"."+table, &id, nil)
+	http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "", "New row inserted successfully."), http.StatusSeeOther)
+}
+
+func (app *application) exploreUpdateRowHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form submission", http.StatusBadRequest)
+		return
+	}
+
+	id, err := strconv.ParseInt(r.FormValue("id"), 10, 64)
+	if err != nil || id < 1 {
+		http.Error(w, "invalid connection id", http.StatusBadRequest)
+		return
+	}
+	source := r.FormValue("source")
+	schema := r.FormValue("schema")
+	table := r.FormValue("table")
+	page := r.FormValue("page")
+	rowCTID := r.FormValue("row_ctid")
+	if page == "" {
+		page = "1"
+	}
+
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		app.handleUnauthenticated(w, r)
+		return
+	}
+	if !user.IsAdmin && !app.checkDatabasePermission(w, r, id, source, authz.ActionMigrationExecute) {
+		return
+	}
+
+	db := app.stores.forType(source)
+	connection, err := store.GetDatabaseConnection(r.Context(), db, id)
+	if err != nil || !connection.IsActive {
+		http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Database connection is unavailable or inactive.", ""), http.StatusSeeOther)
+		return
+	}
+	encPass, err := store.GetEncryptedPassword(r.Context(), db, id)
+	if err != nil {
+		http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to read database credentials.", ""), http.StatusSeeOther)
+		return
+	}
+
+	var execErr error
+	if connection.DBType == "mariadb" {
+		target, openErr := store.OpenMariaDBTarget(r.Context(), connection, encPass, app.encryptionKeyOrEnv())
+		if openErr != nil {
+			http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to connect to MariaDB target.", ""), http.StatusSeeOther)
+			return
+		}
+		defer target.Close()
+
+		schemas, _ := store.ListMariaDBSchemas(r.Context(), target)
+		tables, _ := store.ListMariaDBTables(r.Context(), target, schema)
+		if !contains(schemas, schema) || !contains(tables, table) {
+			http.Error(w, "invalid schema or table", http.StatusBadRequest)
+			return
+		}
+		cols, _, _, colErr := store.ReadMariaDBTable(r.Context(), target, schema, table, 1)
+		if colErr != nil {
+			http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to inspect table columns.", ""), http.StatusSeeOther)
+			return
+		}
+		oldVals := make([]string, len(cols))
+		newVals := make([]string, len(cols))
+		for i := range cols {
+			oldVals[i] = r.FormValue(fmt.Sprintf("old_%d", i))
+			newVals[i] = r.FormValue(fmt.Sprintf("new_%d", i))
+		}
+		execErr = store.UpdateMariaDBRow(r.Context(), target, schema, table, cols, oldVals, newVals)
+	} else {
+		cfg, cfgErr := app.postgresTargetPoolConfig(connection, encPass)
+		if cfgErr != nil {
+			http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Invalid target configuration.", ""), http.StatusSeeOther)
+			return
+		}
+		target, poolErr := pgxpool.NewWithConfig(r.Context(), cfg)
+		if poolErr != nil {
+			http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to connect to PostgreSQL target.", ""), http.StatusSeeOther)
+			return
+		}
+		defer target.Close()
+
+		schemas, _ := store.ListPostgresSchemas(r.Context(), target)
+		tables, _ := store.ListPostgresTables(r.Context(), target, schema)
+		if !contains(schemas, schema) || !contains(tables, table) {
+			http.Error(w, "invalid schema or table", http.StatusBadRequest)
+			return
+		}
+		cols, _, _, colErr := store.ReadPostgresTable(r.Context(), target, schema, table, 1)
+		if colErr != nil {
+			http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to inspect table columns.", ""), http.StatusSeeOther)
+			return
+		}
+		oldVals := make([]string, len(cols))
+		newVals := make([]string, len(cols))
+		for i := range cols {
+			oldVals[i] = r.FormValue(fmt.Sprintf("old_%d", i))
+			newVals[i] = r.FormValue(fmt.Sprintf("new_%d", i))
+		}
+		execErr = store.UpdatePostgresRow(r.Context(), target, schema, table, cols, rowCTID, oldVals, newVals)
+	}
+
+	if execErr != nil {
+		app.logger.Printf("Update row failed on connection %d (%s.%s): %v", id, schema, table, execErr)
+		http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Failed to update row: "+execErr.Error(), ""), http.StatusSeeOther)
+		return
+	}
+
+	_ = app.adminStore.RecordAuditLog(r.Context(), &user.ID, "data.update_row", "table", schema+"."+table, &id, nil)
+	http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "", "Row updated successfully."), http.StatusSeeOther)
+}
+
+func (app *application) exploreDeleteRowHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form submission", http.StatusBadRequest)
+		return
+	}
+
+	id, err := strconv.ParseInt(r.FormValue("id"), 10, 64)
+	if err != nil || id < 1 {
+		http.Error(w, "invalid connection id", http.StatusBadRequest)
+		return
+	}
+	source := r.FormValue("source")
+	schema := r.FormValue("schema")
+	table := r.FormValue("table")
+	page := r.FormValue("page")
+	rowCTID := r.FormValue("row_ctid")
+	if page == "" {
+		page = "1"
+	}
+
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		app.handleUnauthenticated(w, r)
+		return
+	}
+	if !user.IsAdmin && !app.checkDatabasePermission(w, r, id, source, authz.ActionMigrationExecute) {
+		return
+	}
+
+	db := app.stores.forType(source)
+	connection, err := store.GetDatabaseConnection(r.Context(), db, id)
+	if err != nil || !connection.IsActive {
+		http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Database connection is unavailable or inactive.", ""), http.StatusSeeOther)
+		return
+	}
+	encPass, err := store.GetEncryptedPassword(r.Context(), db, id)
+	if err != nil {
+		http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to read database credentials.", ""), http.StatusSeeOther)
+		return
+	}
+
+	var execErr error
+	if connection.DBType == "mariadb" {
+		target, openErr := store.OpenMariaDBTarget(r.Context(), connection, encPass, app.encryptionKeyOrEnv())
+		if openErr != nil {
+			http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to connect to MariaDB target.", ""), http.StatusSeeOther)
+			return
+		}
+		defer target.Close()
+
+		schemas, _ := store.ListMariaDBSchemas(r.Context(), target)
+		tables, _ := store.ListMariaDBTables(r.Context(), target, schema)
+		if !contains(schemas, schema) || !contains(tables, table) {
+			http.Error(w, "invalid schema or table", http.StatusBadRequest)
+			return
+		}
+		cols, _, _, colErr := store.ReadMariaDBTable(r.Context(), target, schema, table, 1)
+		if colErr != nil {
+			http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to inspect table columns.", ""), http.StatusSeeOther)
+			return
+		}
+		oldVals := make([]string, len(cols))
+		for i := range cols {
+			oldVals[i] = r.FormValue(fmt.Sprintf("old_%d", i))
+		}
+		execErr = store.DeleteMariaDBRow(r.Context(), target, schema, table, cols, oldVals)
+	} else {
+		cfg, cfgErr := app.postgresTargetPoolConfig(connection, encPass)
+		if cfgErr != nil {
+			http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Invalid target configuration.", ""), http.StatusSeeOther)
+			return
+		}
+		target, poolErr := pgxpool.NewWithConfig(r.Context(), cfg)
+		if poolErr != nil {
+			http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to connect to PostgreSQL target.", ""), http.StatusSeeOther)
+			return
+		}
+		defer target.Close()
+
+		schemas, _ := store.ListPostgresSchemas(r.Context(), target)
+		tables, _ := store.ListPostgresTables(r.Context(), target, schema)
+		if !contains(schemas, schema) || !contains(tables, table) {
+			http.Error(w, "invalid schema or table", http.StatusBadRequest)
+			return
+		}
+		cols, _, _, colErr := store.ReadPostgresTable(r.Context(), target, schema, table, 1)
+		if colErr != nil {
+			http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to inspect table columns.", ""), http.StatusSeeOther)
+			return
+		}
+		oldVals := make([]string, len(cols))
+		for i := range cols {
+			oldVals[i] = r.FormValue(fmt.Sprintf("old_%d", i))
+		}
+		execErr = store.DeletePostgresRow(r.Context(), target, schema, table, cols, rowCTID, oldVals)
+	}
+
+	if execErr != nil {
+		app.logger.Printf("Delete row failed on connection %d (%s.%s): %v", id, schema, table, execErr)
+		http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Failed to delete row: "+execErr.Error(), ""), http.StatusSeeOther)
+		return
+	}
+
+	_ = app.adminStore.RecordAuditLog(r.Context(), &user.ID, "data.delete_row", "table", schema+"."+table, &id, nil)
+	http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "", "Row deleted successfully."), http.StatusSeeOther)
 }
 
 func (app *application) renderExplorerError(w http.ResponseWriter, r *http.Request, connection store.DatabaseConnection, err error) {
