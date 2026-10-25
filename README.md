@@ -29,8 +29,16 @@ Tugas besar IF3110 Pengembangan Aplikasi Web.
 │   │   ├── migrations/       # SQL untuk menyiapkan tabel internal aplikasi di PostgreSQL.
 │   │   └── migrations-mariadb/ # SQL untuk membuat tabel internal aplikasi dalam format MariaDB.
 │   └── web/
+│       ├── templates.go      # Registrasi dan pemuatan template aplikasi.
 │       ├── templates/        # Halaman aplikasi menggunakan Go template.
 │       └── static/           # File CSS untuk tampilan aplikasi.
+├── test/                     # Pengujian terpisah dari package implementasi.
+│   ├── auth/                 # Pengujian autentikasi dan redaksi data sensitif.
+│   ├── authz/                # Pengujian permission dan otorisasi.
+│   ├── explain/              # Pengujian fitur EXPLAIN/ANALYZE.
+│   ├── migration/            # Pengujian validasi, service, store, dan eksekusi migration.
+│   └── store/                # Pengujian koneksi dan query database.
+├── assets/                   # Aset dokumentasi, termasuk gambar ERD.
 ├── .env.example             # Contoh konfigurasi environment.
 ├── docker-compose.yml       # Konfigurasi container PostgreSQL dan MariaDB.
 ├── go.mod                   # Nama module, versi Go, dan dependency proyek.
@@ -38,7 +46,9 @@ Tugas besar IF3110 Pengembangan Aplikasi Web.
 └── README.md                # Informasi proyek dan cara menjalankannya.
 ```
 
-File dengan akhiran `_test.go` berisi pengujian untuk package tempat file tersebut berada.
+Pengujian berada di folder `test/` dan dikelompokkan berdasarkan fitur yang diuji. File
+`compat.go` pada beberapa subfolder membantu pengujian tetap kompatibel dengan konfigurasi
+database yang digunakan.
 
 ## ERD Model Relasional
 
