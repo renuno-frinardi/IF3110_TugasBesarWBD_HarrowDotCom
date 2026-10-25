@@ -1,0 +1,126 @@
+{{define "content"}}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Workspace / Admin / Users</p>
+    <h1>User management</h1>
+    <p class="muted">Create users, manage active status, reset passwords, and assign Platform Admin privileges.</p>
+  </div>
+</section>
+
+<section class="panel form-panel" style="margin-bottom: 24px;">
+  <form method="post" action="/users/create">
+    {{csrfField .CSRFToken}}
+    <div class="form-section">
+      <h2>Create user</h2>
+      <p class="muted">Passwords are hashed with PBKDF2-SHA256 before storage.</p>
+    </div>
+    <div class="form-grid">
+      <label>Username
+        <input name="username" required maxlength="50" placeholder="alice" />
+      </label>
+      <label>Email (optional)
+        <input name="email" type="email" maxlength="254" placeholder="alice@example.com" />
+      </label>
+      <label>Initial password
+        <input name="password" type="password" required autocomplete="new-password" />
+      </label>
+      <label>Platform role
+        <select name="is_admin">
+          <option value="false" selected>Standard User</option>
+          <option value="true">Platform Admin</option>
+        </select>
+      </label>
+    </div>
+    <div class="form-actions">
+      <button class="button primary" type="submit">Create user</button>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <p class="eyebrow">Directory</p>
+      <h2>Registered users</h2>
+    </div>
+  </div>
+  {{if .Users}}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Username</th>
+          <th>Role</th>
+          <th>Groups</th>
+          <th>Status</th>
+          <th>Password reset</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Users}}
+        <tr>
+          <td>
+            <strong>{{.Username}}</strong>
+            {{if .Email}}<small>{{.Email}}</small>{{end}}
+          </td>
+          <td>
+            <span class="badge {{if .IsAdmin}}green{{else}}gray{{end}}">
+              {{if .IsAdmin}}Platform Admin{{else}}User{{end}}
+            </span>
+          </td>
+          <td>
+            {{if .Groups}}
+              {{range $i, $g := .Groups}}{{if $i}}, {{end}}{{$g}}{{end}}
+            {{else}}
+              <span class="muted">None</span>
+            {{end}}
+          </td>
+          <td>
+            <span class="badge {{if .IsActive}}green{{else}}gray{{end}}">
+              {{if .IsActive}}Active{{else}}Inactive{{end}}
+            </span>
+          </td>
+          <td>
+            <form method="post" action="/users/reset-password" class="toolbar" style="margin:0;">
+              {{csrfField $.CSRFToken}}
+              <input type="hidden" name="user_id" value="{{.ID}}" />
+              <label>New password
+                <input name="new_password" type="password" required placeholder="New password" autocomplete="new-password" />
+              </label>
+              <button class="button secondary" type="submit">Reset</button>
+            </form>
+          </td>
+          <td>
+            <div class="toolbar" style="margin:0;">
+              <form method="post" action="/users/toggle-active" style="margin:0;">
+                {{csrfField $.CSRFToken}}
+                <input type="hidden" name="user_id" value="{{.ID}}" />
+                <input type="hidden" name="is_active" value="{{if .IsActive}}false{{else}}true{{end}}" />
+                <button class="button {{if .IsActive}}danger{{else}}secondary{{end}}" type="submit">
+                  {{if .IsActive}}Deactivate{{else}}Activate{{end}}
+                </button>
+              </form>
+              <form method="post" action="/users/toggle-admin" style="margin:0;">
+                {{csrfField $.CSRFToken}}
+                <input type="hidden" name="user_id" value="{{.ID}}" />
+                <input type="hidden" name="is_admin" value="{{if .IsAdmin}}false{{else}}true{{end}}" />
+                <button class="button secondary" type="submit">
+                  {{if .IsAdmin}}Revoke Admin{{else}}Make Admin{{end}}
+                </button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{else}}
+  <div class="empty">
+    <strong>No users found</strong>
+    <p>Create the first platform user above.</p>
+  </div>
+  {{end}}
+</section>
+{{end}}

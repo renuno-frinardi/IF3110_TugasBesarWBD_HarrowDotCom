@@ -1,0 +1,132 @@
+{{define "content"}}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Workspace / Admin / Groups</p>
+    <h1>Group management</h1>
+    <p class="muted">Organize users into groups to grant database access levels.</p>
+  </div>
+</section>
+
+<section class="panel form-panel" style="margin-bottom: 24px;">
+  <form method="post" action="/groups/create">
+    {{csrfField .CSRFToken}}
+    <div class="form-section">
+      <h2>Create group</h2>
+      <p class="muted">Users can belong to multiple groups; effective access is the union of group grants.</p>
+    </div>
+    <div class="form-grid">
+      <label>Group name
+        <input name="name" required maxlength="100" placeholder="backend-engineers" />
+      </label>
+      <label>Description
+        <input name="description" maxlength="255" placeholder="Backend engineering team" />
+      </label>
+    </div>
+    <div class="form-actions">
+      <button class="button primary" type="submit">Create group</button>
+    </div>
+  </form>
+</section>
+
+<section class="panel form-panel" style="margin-bottom: 24px;">
+  <form method="post" action="/groups/members/add">
+    {{csrfField .CSRFToken}}
+    <div class="form-section">
+      <h2>Add user to group</h2>
+      <p class="muted">Assign an existing user to a group.</p>
+    </div>
+    <div class="form-grid">
+      <label>Group
+        <select name="group_id" required>
+          {{range .Groups}}
+          <option value="{{.ID}}">{{.Name}}</option>
+          {{end}}
+        </select>
+      </label>
+      <label>User
+        <select name="user_id" required>
+          {{range .Users}}
+          <option value="{{.ID}}">{{.Username}}{{if not .IsActive}} (Inactive){{end}}</option>
+          {{end}}
+        </select>
+      </label>
+    </div>
+    <div class="form-actions">
+      <button class="button primary" type="submit">Add member</button>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <p class="eyebrow">Access groups</p>
+      <h2>Groups &amp; members</h2>
+    </div>
+  </div>
+  {{if .Groups}}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Group</th>
+          <th>Description</th>
+          <th>Members</th>
+          <th>Grants</th>
+          <th>Update / Delete</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range $group := .Groups}}
+        <tr>
+          <td><strong>{{$group.Name}}</strong></td>
+          <td>{{$group.Description}}</td>
+          <td>
+            {{if $group.Members}}
+              {{range $group.Members}}
+              <div class="toolbar" style="margin:0 0 6px 0; align-items:center;">
+                <span>{{.Username}}</span>
+                <form method="post" action="/groups/members/remove" style="margin:0;">
+                  {{csrfField $.CSRFToken}}
+                  <input type="hidden" name="group_id" value="{{$group.ID}}" />
+                  <input type="hidden" name="user_id" value="{{.UserID}}" />
+                  <button class="button danger" type="submit">Remove</button>
+                </form>
+              </div>
+              {{end}}
+            {{else}}
+              <span class="muted">No members</span>
+            {{end}}
+          </td>
+          <td><span class="badge green">{{$group.GrantCount}} databases</span></td>
+          <td>
+            <form method="post" action="/groups/update" class="toolbar" style="margin:0 0 6px 0;">
+              {{csrfField $.CSRFToken}}
+              <input type="hidden" name="group_id" value="{{$group.ID}}" />
+              <label>Name
+                <input name="name" required maxlength="100" value="{{$group.Name}}" />
+              </label>
+              <label>Description
+                <input name="description" maxlength="255" value="{{$group.Description}}" />
+              </label>
+              <button class="button secondary" type="submit">Save</button>
+            </form>
+            <form method="post" action="/groups/delete" style="margin:0;">
+              {{csrfField $.CSRFToken}}
+              <input type="hidden" name="group_id" value="{{$group.ID}}" />
+              <button class="button danger" type="submit">Delete group</button>
+            </form>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{else}}
+  <div class="empty">
+    <strong>No groups yet</strong>
+    <p>Create a group above to start assigning database access.</p>
+  </div>
+  {{end}}
+</section>
+{{end}}

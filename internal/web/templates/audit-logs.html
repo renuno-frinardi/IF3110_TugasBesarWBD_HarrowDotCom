@@ -1,0 +1,49 @@
+{{define "content"}}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Workspace / Admin / Audit Logs</p>
+    <h1>Audit logs</h1>
+    <p class="muted">Traceable history of authentication, access control, and migration events.</p>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <p class="eyebrow">Security trail</p>
+      <h2>Recent events</h2>
+    </div>
+  </div>
+  {{if .AuditLogs}}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Timestamp</th>
+          <th>Actor</th>
+          <th>Action</th>
+          <th>Resource</th>
+          <th>Details</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .AuditLogs}}
+        <tr>
+          <td>{{formatTime .CreatedAt}}</td>
+          <td><strong>{{.ActorUsername}}</strong></td>
+          <td><span class="badge gray">{{.Action}}</span></td>
+          <td>{{.ResourceType}}{{if .ResourceID}} #{{.ResourceID}}{{end}}</td>
+          <td><small>{{.Metadata}}</small></td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{else}}
+  <div class="empty">
+    <strong>No audit events yet</strong>
+    <p>Platform activities will appear here automatically.</p>
+  </div>
+  {{end}}
+</section>
+{{end}}

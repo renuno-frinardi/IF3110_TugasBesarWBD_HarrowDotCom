@@ -1,0 +1,41 @@
+{{define "content"}}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Authentication</p>
+    <h1>Sign in to Harrow</h1>
+    <p class="muted">Enter your workspace credentials to access the database management platform.</p>
+  </div>
+</section>
+<section class="panel form-panel">
+  <form method="post" action="/login">
+    <div class="form-section">
+      <h2>Account credentials</h2>
+      <p class="muted">All sessions are protected with automatic rotation and idle timeout.</p>
+    </div>
+    <div class="form-grid">
+      <label>Username
+        <input
+          name="username"
+          required
+          maxlength="50"
+          autocomplete="username"
+          autofocus
+          placeholder="admin"
+        />
+      </label>
+      <label>Password
+        <input
+          name="password"
+          type="password"
+          required
+          autocomplete="current-password"
+          placeholder="••••••••"
+        />
+      </label>
+    </div>
+    <div class="form-actions">
+      <button class="button primary" type="submit">Sign in</button>
+    </div>
+  </form>
+</section>
+{{end}}
