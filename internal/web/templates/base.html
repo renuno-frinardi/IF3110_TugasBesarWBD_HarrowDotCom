@@ -9,6 +9,7 @@
   </head>
   <body>
     <div class="app-shell">
+      <input class="nav-toggle" id="nav-toggle" type="checkbox" />
       <aside class="sidebar">
         <a class="brand" href="/">harrow<span>.</span></a>
         <p class="eyebrow">Database management</p>
@@ -32,13 +33,19 @@
           <span class="status-dot"></span> System operational
         </div>
       </aside>
+      <label class="nav-backdrop" for="nav-toggle" aria-label="Close navigation"></label>
       <main class="main">
         <header class="topbar">
-          <div>
+          <div class="topbar-title">
             <p class="eyebrow">Workspace</p>
             <strong>Harrow Platform</strong>
           </div>
-          <div class="toolbar" style="margin-bottom:0; align-items:center;">
+          <label class="nav-toggle-button" for="nav-toggle" aria-label="Open navigation" title="Open navigation">
+            <span></span>
+            <span></span>
+            <span></span>
+          </label>
+          <div class="topbar-actions">
             {{if .CurrentUser}}
             <span class="muted">{{.CurrentUser.Username}}</span>
             {{if .IsAdmin}}<span class="badge green">Admin</span>{{end}}

@@ -33,6 +33,12 @@ body {
   min-height: 100vh;
 }
 
+.nav-toggle,
+.nav-toggle-button,
+.nav-backdrop {
+  display: none;
+}
+
 .sidebar {
   width: 250px;
   background: #10251e;
@@ -109,7 +115,7 @@ body {
 }
 
 .topbar {
-  height: 88px;
+  height: 80px;
   border-bottom: 1px solid var(--line);
   display: flex;
   align-items: center;
@@ -118,6 +124,25 @@ body {
 
 .topbar strong {
   font-size: 16px;
+}
+
+.topbar-title {
+  align-items: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.topbar-title .eyebrow {
+  margin-bottom: 0;
+}
+
+.topbar-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
 }
 
 .avatar {
@@ -137,7 +162,7 @@ body {
   align-items: end;
   justify-content: space-between;
   gap: 24px;
-  padding: 44px 0 28px;
+  padding: 28px 0 28px;
 }
 
 .page-heading h1 {
@@ -620,6 +645,21 @@ td small {
   padding: 10px 14px;
 }
 
+.connection-table-wrap,
+.audit-table-wrap {
+  min-width: 0;
+}
+
+.audit-table td,
+.audit-table th {
+  vertical-align: top;
+}
+
+.audit-table td:last-child {
+  max-width: 360px;
+  overflow-wrap: anywhere;
+}
+
 .icon-button {
   background: transparent;
   border: 0;
@@ -962,14 +1002,194 @@ select:focus {
   .password-reset-form .button {
     justify-self: start;
   }
+
+  .topbar {
+    align-items: flex-start;
+    display: grid;
+    gap: 18px;
+    height: auto;
+    min-height: 0;
+    padding: 20px 0 18px;
+    position: relative;
+  }
+  .topbar-actions {
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .connection-table-wrap,
+  .audit-table-wrap {
+    overflow: visible;
+  }
+  .connection-table,
+  .connection-table tbody,
+  .connection-table tr,
+  .connection-table td,
+  .audit-table,
+  .audit-table tbody,
+  .audit-table tr,
+  .audit-table td {
+    display: block;
+    width: 100%;
+  }
+  .connection-table thead,
+  .audit-table thead {
+    display: none;
+  }
+  .connection-table tr,
+  .audit-table tr {
+    border-bottom: 1px solid var(--line);
+    padding: 16px 0;
+  }
+  .connection-table tr:last-child,
+  .audit-table tr:last-child {
+    border-bottom: 0;
+  }
+  .connection-table td,
+  .audit-table td {
+    border-bottom: 0;
+    padding: 6px 0;
+  }
+  .connection-table td::before,
+  .audit-table td::before {
+    color: var(--muted);
+    display: block;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    margin-bottom: 3px;
+    text-transform: uppercase;
+  }
+  .connection-table td:nth-child(1)::before {
+    content: "Name";
+  }
+  .connection-table td:nth-child(2)::before {
+    content: "Type";
+  }
+  .connection-table td:nth-child(3)::before {
+    content: "Host";
+  }
+  .connection-table td:nth-child(4)::before {
+    content: "Database";
+  }
+  .connection-table td:nth-child(5)::before {
+    content: "Status";
+  }
+  .connection-table td:nth-child(6)::before {
+    content: "Actions";
+  }
+  .audit-table td:nth-child(1)::before {
+    content: "Timestamp";
+  }
+  .audit-table td:nth-child(2)::before {
+    content: "Actor";
+  }
+  .audit-table td:nth-child(3)::before {
+    content: "Action";
+  }
+  .audit-table td:nth-child(4)::before {
+    content: "Resource";
+  }
+  .audit-table td:nth-child(5)::before {
+    content: "Details";
+  }
+  .connection-actions {
+    align-items: stretch;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+  .connection-actions .button {
+    min-width: 0;
+  }
 }
 
 @media (max-width: 560px) {
   .sidebar {
-    display: none;
+    box-shadow: 14px 0 30px rgba(5, 25, 18, 0.22);
+    display: flex;
+    height: 100vh;
+    left: 0;
+    padding: 24px 18px;
+    position: fixed;
+    top: 0;
+    transform: translateX(-105%);
+    transition: transform 180ms ease;
+    width: min(280px, 86vw);
+    z-index: 20;
+  }
+  .nav-toggle:checked ~ .sidebar {
+    transform: translateX(0);
+  }
+  .nav-toggle-button {
+    align-items: center;
+    background: var(--pale);
+    border: 1px solid #c8e3d5;
+    border-radius: 8px;
+    color: var(--green);
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    height: 38px;
+    justify-content: center;
+    padding: 0;
+    position: absolute;
+    right: 0;
+    top: 25px;
+    width: 38px;
+  }
+  .nav-toggle-button span {
+    background: currentColor;
+    border-radius: 2px;
+    display: block;
+    height: 2px;
+    width: 17px;
+  }
+  .nav-backdrop {
+    background: rgba(16, 37, 30, 0.42);
+    inset: 0;
+    position: fixed;
+    z-index: 10;
+  }
+  .nav-toggle:checked ~ .nav-backdrop {
+    display: block;
   }
   .main {
     width: 100%;
+    padding: 0 16px 40px;
+  }
+  .topbar-title {
+    align-items: flex-start;
+    padding-right: 52px;
+    width: 100%;
+  }
+  .topbar-title .eyebrow,
+  .topbar-title strong {
+    width: 100%;
+  }
+  .topbar-title .eyebrow {
+    margin-bottom: 0;
+  }
+  .topbar-actions {
+    align-items: center;
+    display: grid;
+    gap: 10px;
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
+    justify-content: initial;
+    width: 100%;
+  }
+  .topbar-actions .muted {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .topbar-actions form {
+    min-width: 0;
+  }
+  .topbar-actions form .button {
+    white-space: nowrap;
   }
   .page-heading {
     display: block;
