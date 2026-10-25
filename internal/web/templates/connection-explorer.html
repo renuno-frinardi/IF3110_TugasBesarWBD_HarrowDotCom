@@ -42,7 +42,39 @@
       </div>
       <span class="badge green">Read only</span>
     </div>
-    {{if .Explorer.Columns}}
+      <div class="explorer-metadata">
+        <div>
+          <h3>Constraints</h3>
+          {{if .Explorer.Constraints}}
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Name</th><th>Type</th><th>Definition / Columns</th></tr></thead>
+              <tbody>
+                {{range .Explorer.Constraints}}
+                <tr><td>{{.Name}}</td><td>{{.Type}}</td><td>{{.Definition}}</td></tr>
+                {{end}}
+              </tbody>
+            </table>
+          </div>
+          {{else}}<p class="muted">No constraints found.</p>{{end}}
+        </div>
+        <div>
+          <h3>Indexes</h3>
+          {{if .Explorer.Indexes}}
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Name</th><th>Type</th><th>Definition / Columns</th></tr></thead>
+              <tbody>
+                {{range .Explorer.Indexes}}
+                <tr><td>{{.Name}}</td><td>{{.Type}}</td><td>{{.Definition}}</td></tr>
+                {{end}}
+              </tbody>
+            </table>
+          </div>
+          {{else}}<p class="muted">No indexes found.</p>{{end}}
+        </div>
+      </div>
+      {{if .Explorer.Columns}}
     <div class="table-wrap">
       <table>
         <thead>

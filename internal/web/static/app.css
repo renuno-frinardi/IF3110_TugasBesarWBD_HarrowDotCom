@@ -325,12 +325,59 @@ body {
   margin-bottom: 20px;
 }
 
-.search-placeholder {
+.connection-search {
+  align-items: center;
   border: 1px solid var(--line);
   border-radius: 7px;
   color: #a0aaa5;
-  padding: 10px 13px;
+  display: flex;
+  gap: 8px;
+  padding: 0 13px;
   width: 280px;
+}
+
+.connection-search input,
+.connection-filters select {
+  background: transparent;
+  border: 0;
+  color: var(--ink);
+  font: inherit;
+  outline: none;
+}
+
+.connection-search input {
+  min-width: 0;
+  padding: 10px 0;
+  width: 100%;
+}
+
+.connection-search input:focus {
+  outline: none;
+}
+
+.connection-search:focus-within {
+  border-color: #5ea982;
+  outline: 2px solid #dff1e7;
+}
+
+.connection-filters {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+
+.connection-filters select {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 10px 13px;
+}
+
+.sr-only {
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  position: absolute;
+  width: 1px;
 }
 
 .table-wrap {
@@ -528,7 +575,7 @@ select:focus {
   display: block;
   overflow: hidden;
   border-radius: 6px;
-  color: var(--muted);
+  color: #123d2d;
   padding: 9px 10px;
   text-decoration: none;
   text-overflow: ellipsis;
@@ -544,6 +591,18 @@ select:focus {
 
 .explorer-content {
   min-width: 0;
+}
+
+.explorer-content .table-wrap th {
+  color: #123d2d;
+  font-size: 14px;
+}
+
+.explorer-metadata h3 {
+  color: #000000;
+  font-size: 17px;
+  margin: 22px 0 10px;
+  font-weight: 600;
 }
 
 .explorer-content .panel-heading {
@@ -596,8 +655,11 @@ select:focus {
   .toolbar {
     display: block;
   }
-  .search-placeholder {
+  .connection-search {
     width: 100%;
     margin-bottom: 10px;
+  }
+  .connection-filters {
+    flex-wrap: wrap;
   }
 }

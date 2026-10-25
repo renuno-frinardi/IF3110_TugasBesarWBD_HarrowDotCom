@@ -22,31 +22,21 @@ import (
 )
 
 type pageData struct {
-	Title                 string
-	Active                string
-	Error                 string
-	ErrorMessage          string
-	Success               string
-	CurrentUser           *auth.User
-	IsAdmin               bool
-	CSRFToken             string
-	Stats                 dashboardStats
-	Connections           []store.DatabaseConnection
-	PostgreSQLConnections []store.DatabaseConnection
-	MariaDBConnections    []store.DatabaseConnection
-	Connection            store.DatabaseConnection
-	FormConnection        store.CreateDatabaseConnectionInput
-	FormPassword          string
-	Explorer              store.ExplorerData
-	Users                 []admin.UserRecord
-	Groups                []admin.GroupRecord
-	Grants                []admin.DatabaseGrantRecord
-	AuditLogs             []admin.AuditLogRecord
-	Migrations            []migration.Migration
-	CanEditMigration      bool
-	DraftTitle            string
-	DraftSQL              string
-	ExplainResult         *explain.Result
+	Title                  string
+	Active                 string
+	Error                  string
+	Success                string
+	Stats                  dashboardStats
+	Connections            []store.DatabaseConnection
+	PostgreSQLConnections  []store.DatabaseConnection
+	MariaDBConnections     []store.DatabaseConnection
+	Connection             store.DatabaseConnection
+	FormConnection         store.CreateDatabaseConnectionInput
+	FormPassword           string
+	Explorer               store.ExplorerData
+	ConnectionSearch       string
+	ConnectionTypeFilter   string
+	ConnectionStatusFilter string
 }
 
 type dashboardStats struct {
@@ -121,8 +111,109 @@ func main() {
 		if err != nil {
 			log.Fatalf("seed-admin failed to read password: %v", err)
 		}
-		sessMgr := auth.NewSessionManager(auth.NewPostgresSessionStore(postgresDB.DB), auth.DefaultSessionConfig())
-		authSvc, err := auth.NewService(postgresDB.DB, sessMgr)
+
+		for i := range mariaDBConnections {
+			mariaDBConnections[i].Source = "mariadb"
+		}
+
+		postgresqlConnections = filterConnectionsByType(postgresqlConnections, "postgresql")
+		mariaDBConnections = filterConnectionsByType(mariaDBConnections, "mariadb")
+
+		search := strings.TrimSpace(r.URL.Query().Get("search"))
+		typeFilter := r.URL.Query().Get("type")
+		statusFilter := r.URL.Query().Get("status")
+		postgresqlConnections = filterConnections(postgresqlConnections, search, typeFilter, statusFilter)
+		mariaDBConnections = filterConnections(mariaDBConnections, search, typeFilter, statusFilter)
+
+		render(w, "connections", pageData{
+			Title:                  "Connections",
+			Active:                 "connections",
+			PostgreSQLConnections:  postgresqlConnections,
+			MariaDBConnections:     mariaDBConnections,
+			ConnectionSearch:       search,
+			ConnectionTypeFilter:   typeFilter,
+			ConnectionStatusFilter: statusFilter,
+		})
+	}
+}
+
+func filterConnectionsByType(connections []store.DatabaseConnection, dbType string) []store.DatabaseConnection {
+	filtered := make([]store.DatabaseConnection, 0, len(connections))
+	for _, connection := range connections {
+		if connection.DBType == dbType {
+			filtered = append(filtered, connection)
+		}
+	}
+	return filtered
+}
+
+func filterConnections(connections []store.DatabaseConnection, search, typeFilter, statusFilter string) []store.DatabaseConnection {
+	search = strings.ToLower(strings.TrimSpace(search))
+	filtered := make([]store.DatabaseConnection, 0, len(connections))
+
+	for _, connection := range connections {
+		if typeFilter != "" && connection.DBType != typeFilter {
+			continue
+		}
+		if statusFilter == "active" && !connection.IsActive {
+			continue
+		}
+		if statusFilter == "inactive" && connection.IsActive {
+			continue
+		}
+		if search != "" {
+			matches := strings.Contains(strings.ToLower(connection.Name), search) ||
+				strings.Contains(strings.ToLower(connection.Host), search) ||
+				strings.Contains(strings.ToLower(connection.DatabaseName), search) ||
+				strings.Contains(strings.ToLower(connection.Username), search)
+			if !matches {
+				continue
+			}
+		}
+		filtered = append(filtered, connection)
+	}
+
+	return filtered
+}
+
+func connectionDetailHandler(stores *appStores) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.ParseInt(r.URL.Query().Get("id"), 10, 64)
+		if err != nil || id < 1 {
+			http.Error(w, "invalid connection id", http.StatusBadRequest)
+			return
+		}
+
+		source := r.URL.Query().Get("source")
+		db := stores.forType(source)
+		connection, err := store.GetDatabaseConnection(r.Context(), db, id)
+		if err != nil {
+			http.Error(w, "database connection not found", http.StatusNotFound)
+			return
+		}
+		connection.Source = source
+		render(w, "connection-detail", pageData{Title: "Connection details", Active: "connections", Connection: connection})
+	}
+}
+
+func exploreConnectionHandler(stores *appStores) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.ParseInt(r.URL.Query().Get("id"), 10, 64)
+		if err != nil || id < 1 {
+			http.Error(w, "invalid connection id", http.StatusBadRequest)
+			return
+		}
+
+		source := r.URL.Query().Get("source")
+		db := stores.forType(source)
+		connection, err := store.GetDatabaseConnection(r.Context(), db, id)
+		if err != nil {
+			http.Error(w, "database connection not found", http.StatusNotFound)
+			return
+		}
+		connection.Source = source
+
+		encryptedPassword, err := store.GetEncryptedPassword(r.Context(), db, id)
 		if err != nil {
 			log.Fatalf("seed-admin init failed: %v", err)
 		}
@@ -130,7 +221,66 @@ func main() {
 		if err != nil {
 			log.Fatalf("seed-admin failed: %v", err)
 		}
-		fmt.Fprintf(os.Stdout, "Seeded Platform Admin %q (id=%d)\n", u.Username, u.ID)
+
+		target, err := pgxpool.NewWithConfig(r.Context(), config)
+		if err != nil {
+			renderExplorerError(w, connection, err)
+			return
+		}
+
+		defer target.Close()
+		if err := target.Ping(r.Context()); err != nil {
+			renderExplorerError(w, connection, err)
+			return
+		}
+
+		explorer := store.ExplorerData{Page: store.ParsePageNumber(r.URL.Query().Get("page"))}
+		explorer.Schemas, err = store.ListPostgresSchemas(r.Context(), target)
+		if err == nil && len(explorer.Schemas) > 0 {
+			explorer.SelectedSchema = r.URL.Query().Get("schema")
+			if explorer.SelectedSchema == "" {
+				explorer.SelectedSchema = explorer.Schemas[0]
+			}
+			if !contains(explorer.Schemas, explorer.SelectedSchema) {
+				http.Error(w, "invalid schema", http.StatusBadRequest)
+				return
+			}
+			explorer.Tables, err = store.ListPostgresTables(r.Context(), target, explorer.SelectedSchema)
+		}
+
+		if err == nil {
+			explorer.SelectedTable = r.URL.Query().Get("table")
+			if explorer.SelectedTable != "" {
+				if !contains(explorer.Tables, explorer.SelectedTable) {
+					http.Error(w, "invalid table", http.StatusBadRequest)
+					return
+				}
+				explorer.Constraints, err = store.ListPostgresConstraints(r.Context(), target, explorer.SelectedSchema, explorer.SelectedTable)
+				if err == nil {
+					explorer.Indexes, err = store.ListPostgresIndexes(r.Context(), target, explorer.SelectedSchema, explorer.SelectedTable)
+				}
+
+				if err == nil {
+					explorer.Columns, explorer.Rows, explorer.HasNextPage, err = store.ReadPostgresTable(r.Context(), target, explorer.SelectedSchema, explorer.SelectedTable, explorer.Page)
+				}
+			}
+		}
+
+		if err != nil {
+			log.Printf("Read target database metadata failed for connection %d: %v", connection.ID, err)
+			explorerError := pageData{Title: "Database explorer", Active: "connections", Connection: connection, Explorer: explorer, Error: "Unable to read the target database, please check the connection settings and permissions"}
+			render(w, "connection-explorer", explorerError)
+			return
+		}
+		render(w, "connection-explorer", pageData{Title: "Database explorer", Active: "connections", Connection: connection, Explorer: explorer})
+	}
+
+}
+
+func exploreMariaDBConnection(w http.ResponseWriter, r *http.Request, connection store.DatabaseConnection, encryptedPassword []byte) {
+	target, err := store.OpenMariaDBTarget(r.Context(), connection, encryptedPassword, os.Getenv("ENCRYPTION_KEY"))
+	if err != nil {
+		renderExplorerError(w, connection, err)
 		return
 	}
 
@@ -140,16 +290,21 @@ func main() {
 	}
 	defer pgPool.Close()
 
-	var mariaDB *store.DB
-	mariaURL := envOrDefault("MARIADB_DATABASE_URL", store.MariaDBAppURL(
-		envOrDefault("MARIADB_HOST", "localhost"), envIntOrDefault("MARIADB_PORT", 3307),
-		envOrDefault("MARIADB_DATABASE", "harrow_db"), envOrDefault("MARIADB_USER", "harrow"),
-		os.Getenv("MARIADB_PASSWORD"),
-	))
-	if mdb, err := store.OpenDB(ctx, "mariadb", mariaURL); err == nil {
-		if migErr := store.RunMigrations(ctx, mdb); migErr != nil {
-			mdb.Close()
-			log.Fatalf("Failed to run MariaDB migrations: %v", migErr)
+	if err == nil {
+		explorer.SelectedTable = r.URL.Query().Get("table")
+		if explorer.SelectedTable != "" {
+			if !contains(explorer.Tables, explorer.SelectedTable) {
+				http.Error(w, "invalid table", http.StatusBadRequest)
+				return
+			}
+			explorer.Constraints, err = store.ListMariaDBConstraints(r.Context(), target, explorer.SelectedSchema, explorer.SelectedTable)
+			if err == nil {
+				explorer.Indexes, err = store.ListMariaDBIndexes(r.Context(), target, explorer.SelectedSchema, explorer.SelectedTable)
+			}
+
+			if err == nil {
+				explorer.Columns, explorer.Rows, explorer.HasNextPage, err = store.ReadMariaDBTable(r.Context(), target, explorer.SelectedSchema, explorer.SelectedTable, explorer.Page)
+			}
 		}
 		mariaDB = mdb
 		defer mariaDB.Close()

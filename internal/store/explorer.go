@@ -18,8 +18,22 @@ type ExplorerData struct {
 	SelectedTable  string
 	Columns        []string
 	Rows           [][]string
+	Constraints    []TableConstraint
+	Indexes        []TableIndex
 	Page           int
 	HasNextPage    bool
+}
+
+type TableConstraint struct {
+	Name       string
+	Type       string
+	Definition string
+}
+
+type TableIndex struct {
+	Name       string
+	Type       string
+	Definition string
 }
 
 func GetEncryptedPassword(ctx context.Context, pool *DB, id int64) ([]byte, error) {
@@ -110,6 +124,72 @@ func ListMariaDBTables(ctx context.Context, target *sql.DB, schema string) ([]st
 	defer rows.Close()
 
 	return scanSingleStringColumn(rows, "MariaDB table")
+}
+
+func ListMariaDBConstraints(ctx context.Context, target *sql.DB, schema, table string) ([]TableConstraint, error) {
+	rows, err := target.QueryContext(ctx, `
+		SELECT tc.CONSTRAINT_NAME, tc.CONSTRAINT_TYPE,
+		       COALESCE(GROUP_CONCAT(kcu.COLUMN_NAME ORDER BY kcu.ORDINAL_POSITION SEPARATOR ', '), '')
+		FROM information_schema.TABLE_CONSTRAINTS tc
+		LEFT JOIN information_schema.KEY_COLUMN_USAGE kcu
+		  ON kcu.CONSTRAINT_SCHEMA = tc.CONSTRAINT_SCHEMA
+		 AND kcu.TABLE_SCHEMA = tc.TABLE_SCHEMA
+		 AND kcu.TABLE_NAME = tc.TABLE_NAME
+		 AND kcu.CONSTRAINT_NAME = tc.CONSTRAINT_NAME
+		WHERE tc.TABLE_SCHEMA = ? AND tc.TABLE_NAME = ?
+		GROUP BY tc.CONSTRAINT_NAME, tc.CONSTRAINT_TYPE
+		ORDER BY tc.CONSTRAINT_NAME
+	`, schema, table)
+	if err != nil {
+		return nil, fmt.Errorf("List MariaDB constraints: %w", err)
+	}
+	defer rows.Close()
+
+	constraints := make([]TableConstraint, 0)
+	for rows.Next() {
+		var constraint TableConstraint
+		if err := rows.Scan(&constraint.Name, &constraint.Type, &constraint.Definition); err != nil {
+			return nil, fmt.Errorf("Scan MariaDB constraint: %w", err)
+		}
+		constraints = append(constraints, constraint)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("Read MariaDB constraints: %w", err)
+	}
+	return constraints, nil
+}
+
+func ListMariaDBIndexes(ctx context.Context, target *sql.DB, schema, table string) ([]TableIndex, error) {
+	rows, err := target.QueryContext(ctx, `
+		SELECT INDEX_NAME,
+		       CASE WHEN INDEX_NAME = 'PRIMARY' THEN 'PRIMARY KEY'
+		            WHEN NON_UNIQUE = 0 THEN 'UNIQUE'
+		            ELSE 'INDEX' END,
+		       GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX SEPARATOR ', ')
+		FROM information_schema.STATISTICS
+		WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
+		GROUP BY INDEX_NAME, NON_UNIQUE
+		ORDER BY INDEX_NAME
+	`, schema, table)
+	if err != nil {
+		return nil, fmt.Errorf("List MariaDB indexes: %w", err)
+	}
+	defer rows.Close()
+
+	indexes := make([]TableIndex, 0)
+	for rows.Next() {
+		var index TableIndex
+		if err := rows.Scan(&index.Name, &index.Type, &index.Definition); err != nil {
+			return nil, fmt.Errorf("Scan MariaDB index: %w", err)
+		}
+		indexes = append(indexes, index)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("Read MariaDB indexes: %w", err)
+	}
+	return indexes, nil
 }
 
 func ReadMariaDBTable(ctx context.Context, target *sql.DB, schema, table string, page int) ([]string, [][]string, bool, error) {
@@ -207,6 +287,72 @@ func ListPostgresTables(ctx context.Context, target *pgxpool.Pool, schema string
 		tables = append(tables, table)
 	}
 	return tables, rows.Err()
+}
+
+func ListPostgresConstraints(ctx context.Context, target *pgxpool.Pool, schema, table string) ([]TableConstraint, error) {
+	rows, err := target.Query(ctx, `
+		SELECT con.conname,
+		       CASE con.contype
+		         WHEN 'p' THEN 'PRIMARY KEY'
+		         WHEN 'f' THEN 'FOREIGN KEY'
+		         WHEN 'u' THEN 'UNIQUE'
+		         WHEN 'c' THEN 'CHECK'
+		         WHEN 'x' THEN 'EXCLUSION'
+		         WHEN 'n' THEN 'NOT NULL'
+		         ELSE con.contype::text
+		       END,
+		       pg_get_constraintdef(con.oid)
+		FROM pg_constraint con
+		JOIN pg_class rel ON rel.oid = con.conrelid
+		JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+		WHERE nsp.nspname = $1 AND rel.relname = $2
+		ORDER BY con.conname
+	`, schema, table)
+	if err != nil {
+		return nil, fmt.Errorf("List target constraints: %w", err)
+	}
+	defer rows.Close()
+
+	constraints := make([]TableConstraint, 0)
+	for rows.Next() {
+		var constraint TableConstraint
+		if err := rows.Scan(&constraint.Name, &constraint.Type, &constraint.Definition); err != nil {
+			return nil, fmt.Errorf("Scan target constraint: %w", err)
+		}
+		constraints = append(constraints, constraint)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("Read target constraints: %w", err)
+	}
+	return constraints, nil
+}
+
+func ListPostgresIndexes(ctx context.Context, target *pgxpool.Pool, schema, table string) ([]TableIndex, error) {
+	rows, err := target.Query(ctx, `
+		SELECT indexname, 'INDEX', indexdef
+		FROM pg_indexes
+		WHERE schemaname = $1 AND tablename = $2
+		ORDER BY indexname
+	`, schema, table)
+	if err != nil {
+		return nil, fmt.Errorf("List target indexes: %w", err)
+	}
+	defer rows.Close()
+
+	indexes := make([]TableIndex, 0)
+	for rows.Next() {
+		var index TableIndex
+		if err := rows.Scan(&index.Name, &index.Type, &index.Definition); err != nil {
+			return nil, fmt.Errorf("Scan target index: %w", err)
+		}
+		indexes = append(indexes, index)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("Read target indexes: %w", err)
+	}
+	return indexes, nil
 }
 
 func ReadPostgresTable(ctx context.Context, target *pgxpool.Pool, schema, table string, page int) (columns []string, values [][]string, hasNext bool, err error) {
