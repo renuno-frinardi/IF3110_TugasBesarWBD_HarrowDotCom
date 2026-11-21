@@ -167,7 +167,7 @@ func main() {
 		dbAuthorizer:  dbAuthz,
 		adminStore:    adminStore,
 		migStore:      migStore,
-		migService:    migration.NewService(migStore, migration.NewDatabaseAccess(pgPool)),
+		migService:    migration.NewServiceWithPublisher(migStore, migration.NewDatabaseAccess(pgPool), migration.NewStubPublisher(nil)),
 		encryptionKey: os.Getenv("ENCRYPTION_KEY"),
 		logger:        logger,
 	}

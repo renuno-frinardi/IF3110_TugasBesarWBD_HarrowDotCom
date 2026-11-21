@@ -39,13 +39,15 @@ type GroupMember struct {
 }
 
 type GroupRecord struct {
-	ID          int64
-	Name        string
-	Description string
-	Members     []GroupMember
-	GrantCount  int
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID             int64
+	Name           string
+	Description    string
+	LeaderUserID   int64
+	LeaderUsername string
+	Members        []GroupMember
+	GrantCount     int
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 type DatabaseGrantRecord struct {
@@ -315,8 +317,10 @@ func (s *Store) DeleteUser(ctx context.Context, actorID, targetUserID int64) err
 func (s *Store) ListGroups(ctx context.Context) ([]GroupRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT ug.id, ug.name, ug.description, ug.created_at, ug.updated_at,
+		       COALESCE(ug.leader_user_id, 0), COALESCE(u.username, ''),
 		       (SELECT COUNT(*) FROM group_database_access gda WHERE gda.group_id = ug.id) AS grant_count
 		FROM user_groups ug
+		LEFT JOIN users u ON u.id = ug.leader_user_id
 		ORDER BY ug.name ASC
 	`)
 	if err != nil {
@@ -328,7 +332,7 @@ func (s *Store) ListGroups(ctx context.Context) ([]GroupRecord, error) {
 	idxByID := make(map[int64]int)
 	for rows.Next() {
 		var g GroupRecord
-		if err := rows.Scan(&g.ID, &g.Name, &g.Description, &g.CreatedAt, &g.UpdatedAt, &g.GrantCount); err != nil {
+		if err := rows.Scan(&g.ID, &g.Name, &g.Description, &g.CreatedAt, &g.UpdatedAt, &g.LeaderUserID, &g.LeaderUsername, &g.GrantCount); err != nil {
 			return nil, fmt.Errorf("scan group: %w", err)
 		}
 		idxByID[g.ID] = len(groups)
@@ -414,6 +418,26 @@ func (s *Store) UpdateGroup(ctx context.Context, actorID, groupID int64, name, d
 }
 
 // Melakukan deletion terhadap grup
+func (s *Store) SetGroupLeader(ctx context.Context, actorID, groupID, leaderUserID int64) error {
+	var isMember bool
+	if err := s.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM user_group_members WHERE group_id=$1 AND user_id=$2)`, groupID, leaderUserID).Scan(&isMember); err != nil {
+		return err
+	}
+	if !isMember {
+		return fmt.Errorf("%w: leader must be a member of the group", ErrInvalidInput)
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE user_groups SET leader_user_id=NULLIF($1,0),updated_at=NOW() WHERE id=$2`, leaderUserID, groupID)
+	if err != nil {
+		return err
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return ErrNotFound
+	}
+	_ = s.RecordAuditLog(ctx, &actorID, "group.set_leader", "group", fmt.Sprintf("%d", groupID), nil, map[string]any{"leader_user_id": leaderUserID})
+	return nil
+}
+
 func (s *Store) DeleteGroup(ctx context.Context, actorID, groupID int64) error {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM user_groups WHERE id = $1`, groupID)
 	if err != nil {

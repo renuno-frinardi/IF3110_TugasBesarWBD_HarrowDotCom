@@ -55,12 +55,29 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("/groups/delete", app.requireAuth(app.requirePermission(authz.ActionPlatformAdmin, nil, app.groupDeleteHandler)))
 	mux.HandleFunc("/groups/members/add", app.requireAuth(app.requirePermission(authz.ActionPlatformAdmin, nil, app.groupAddMemberHandler)))
 	mux.HandleFunc("/groups/members/remove", app.requireAuth(app.requirePermission(authz.ActionPlatformAdmin, nil, app.groupRemoveMemberHandler)))
+	mux.HandleFunc("/groups/leader", app.requireAuth(app.requirePermission(authz.ActionPlatformAdmin, nil, app.groupSetLeaderHandler)))
 
 	mux.HandleFunc("/access", app.requireAuth(app.requirePermission(authz.ActionPlatformAdmin, nil, app.accessHandler)))
 	mux.HandleFunc("/access/grant", app.requireAuth(app.requirePermission(authz.ActionPlatformAdmin, nil, app.accessGrantHandler)))
 	mux.HandleFunc("/access/revoke", app.requireAuth(app.requirePermission(authz.ActionPlatformAdmin, nil, app.accessRevokeHandler)))
 
 	mux.HandleFunc("/audit-logs", app.requireAuth(app.requirePermission(authz.ActionPlatformAdmin, nil, app.auditLogsHandler)))
+
+	// Migration workflow JSON API
+	mux.HandleFunc("POST /api/migrations", app.requireAuth(app.migrationAPICreateHandler))
+	mux.HandleFunc("GET /api/migrations/{id}", app.requireAuth(app.migrationAPIGetHandler))
+	mux.HandleFunc("PUT /api/migrations/{id}", app.requireAuth(app.migrationAPIUpdateHandler))
+	mux.HandleFunc("PATCH /api/migrations/{id}", app.requireAuth(app.migrationAPIUpdateHandler))
+	mux.HandleFunc("POST /api/migrations/{id}/submit", app.requireAuth(app.migrationAPISubmitHandler))
+	mux.HandleFunc("POST /api/migrations/{id}/execute", app.requireAuth(app.migrationAPIExecuteHandler))
+	mux.HandleFunc("POST /api/migrations/{id}/rollback/request", app.requireAuth(app.migrationAPIRollbackRequestHandler))
+	mux.HandleFunc("POST /api/migrations/{id}/rollback/execute", app.requireAuth(app.migrationAPIRollbackExecuteHandler))
+	mux.HandleFunc("POST /api/migrations/{id}/forward/request", app.requireAuth(app.migrationAPIForwardRequestHandler))
+	mux.HandleFunc("POST /api/migrations/{id}/forward/execute", app.requireAuth(app.migrationAPIForwardExecuteHandler))
+	mux.HandleFunc("GET /api/approvals/{id}", app.requireAuth(app.approvalAPIGetHandler))
+	mux.HandleFunc("POST /api/approvals/{id}/approve", app.requireAuth(app.approvalAPIApproveHandler))
+	mux.HandleFunc("GET /api/databases/{id}/history", app.requireAuth(app.migrationHistoryAPIHandler))
+	mux.HandleFunc("GET /api/executions/{id}", app.requireAuth(app.executionAPIHandler))
 
 	return auth.SecurityHeadersMiddleware(app.logger, mux)
 }
