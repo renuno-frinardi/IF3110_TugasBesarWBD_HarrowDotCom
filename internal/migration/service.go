@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 )
 
@@ -11,14 +12,25 @@ var InvalidInput = errors.New("Invalid input")
 var Forbidden = errors.New("Access denied")
 
 type Service struct {
-	store  *Store
-	access *DatabaseAccess
+	store     *Store
+	access    *DatabaseAccess
+	publisher Publisher
+	logger    *slog.Logger
 }
 
 func NewService(store *Store, access *DatabaseAccess) *Service {
+	return NewServiceWithPublisher(store, access, NewStubPublisher(nil))
+}
+
+func NewServiceWithPublisher(store *Store, access *DatabaseAccess, publisher Publisher) *Service {
+	if publisher == nil {
+		publisher = NewStubPublisher(nil)
+	}
 	return &Service{
-		store:  store,
-		access: access,
+		store:     store,
+		access:    access,
+		publisher: publisher,
+		logger:    slog.Default(),
 	}
 }
 
