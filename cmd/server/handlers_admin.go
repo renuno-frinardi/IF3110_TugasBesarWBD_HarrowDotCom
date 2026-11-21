@@ -42,7 +42,7 @@ func (app *application) userCreateHandler(w http.ResponseWriter, r *http.Request
 		})
 		return
 	}
-	http.Redirect(w, r, "/users", http.StatusSeeOther)
+	navigate(w, r, "/users", http.StatusSeeOther)
 }
 
 func (app *application) userToggleActiveHandler(w http.ResponseWriter, r *http.Request) {
@@ -61,7 +61,7 @@ func (app *application) userToggleActiveHandler(w http.ResponseWriter, r *http.R
 		http.Error(w, "unable to update user status", http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, "/users", http.StatusSeeOther)
+	navigate(w, r, "/users", http.StatusSeeOther)
 }
 
 func (app *application) userResetPasswordHandler(w http.ResponseWriter, r *http.Request) {
@@ -86,7 +86,7 @@ func (app *application) userResetPasswordHandler(w http.ResponseWriter, r *http.
 		})
 		return
 	}
-	http.Redirect(w, r, "/users", http.StatusSeeOther)
+	navigate(w, r, "/users", http.StatusSeeOther)
 }
 
 func (app *application) userToggleAdminHandler(w http.ResponseWriter, r *http.Request) {
@@ -105,7 +105,7 @@ func (app *application) userToggleAdminHandler(w http.ResponseWriter, r *http.Re
 		http.Error(w, "unable to update user role", http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, "/users", http.StatusSeeOther)
+	navigate(w, r, "/users", http.StatusSeeOther)
 }
 
 func (app *application) groupsHandler(w http.ResponseWriter, r *http.Request) {
@@ -143,7 +143,7 @@ func (app *application) groupCreateHandler(w http.ResponseWriter, r *http.Reques
 		})
 		return
 	}
-	http.Redirect(w, r, "/groups", http.StatusSeeOther)
+	navigate(w, r, "/groups", http.StatusSeeOther)
 }
 
 func (app *application) groupUpdateHandler(w http.ResponseWriter, r *http.Request) {
@@ -161,7 +161,7 @@ func (app *application) groupUpdateHandler(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "unable to update group", http.StatusBadRequest)
 		return
 	}
-	http.Redirect(w, r, "/groups", http.StatusSeeOther)
+	navigate(w, r, "/groups", http.StatusSeeOther)
 }
 
 func (app *application) groupDeleteHandler(w http.ResponseWriter, r *http.Request) {
@@ -179,7 +179,7 @@ func (app *application) groupDeleteHandler(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "unable to delete group", http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, "/groups", http.StatusSeeOther)
+	navigate(w, r, "/groups", http.StatusSeeOther)
 }
 
 func (app *application) groupAddMemberHandler(w http.ResponseWriter, r *http.Request) {
@@ -198,7 +198,7 @@ func (app *application) groupAddMemberHandler(w http.ResponseWriter, r *http.Req
 		http.Error(w, "unable to add member to group", http.StatusBadRequest)
 		return
 	}
-	http.Redirect(w, r, "/groups", http.StatusSeeOther)
+	navigate(w, r, "/groups", http.StatusSeeOther)
 }
 
 func (app *application) groupSetLeaderHandler(w http.ResponseWriter, r *http.Request) {
@@ -217,7 +217,7 @@ func (app *application) groupSetLeaderHandler(w http.ResponseWriter, r *http.Req
 		http.Error(w, "unable to set group leader", http.StatusBadRequest)
 		return
 	}
-	http.Redirect(w, r, "/groups", http.StatusSeeOther)
+	navigate(w, r, "/groups", http.StatusSeeOther)
 }
 
 func (app *application) groupRemoveMemberHandler(w http.ResponseWriter, r *http.Request) {
@@ -236,7 +236,7 @@ func (app *application) groupRemoveMemberHandler(w http.ResponseWriter, r *http.
 		http.Error(w, "unable to remove member from group", http.StatusBadRequest)
 		return
 	}
-	http.Redirect(w, r, "/groups", http.StatusSeeOther)
+	navigate(w, r, "/groups", http.StatusSeeOther)
 }
 
 func (app *application) accessHandler(w http.ResponseWriter, r *http.Request) {
@@ -273,7 +273,7 @@ func (app *application) accessGrantHandler(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "unable to grant database access", http.StatusBadRequest)
 		return
 	}
-	http.Redirect(w, r, "/access", http.StatusSeeOther)
+	navigate(w, r, "/access", http.StatusSeeOther)
 }
 
 func (app *application) accessRevokeHandler(w http.ResponseWriter, r *http.Request) {
@@ -292,7 +292,7 @@ func (app *application) accessRevokeHandler(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "unable to revoke database access", http.StatusBadRequest)
 		return
 	}
-	http.Redirect(w, r, "/access", http.StatusSeeOther)
+	navigate(w, r, "/access", http.StatusSeeOther)
 }
 
 func (app *application) auditLogsHandler(w http.ResponseWriter, r *http.Request) {

@@ -12,6 +12,17 @@ import (
 
 func (app *application) routes() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /session", app.requireAuth(func(w http.ResponseWriter, r *http.Request){
+		user, _ := auth.UserFromContext(r.Context())
+		session, _ := auth.SessionFromContext(r.Context())
+
+		writeJSON(w, map[string]any{
+			"id": user.ID,
+			"username": user.Username, 
+			"is_admin": user.IsAdmin,
+			"csrf_token": auth.CSRFToken(session)
+		})
+	}))
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(web.StaticFS()))))
 
 	// Public authentication endpoints
@@ -79,7 +90,12 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("GET /api/databases/{id}/history", app.requireAuth(app.migrationHistoryAPIHandler))
 	mux.HandleFunc("GET /api/executions/{id}", app.requireAuth(app.executionAPIHandler))
 
-	return auth.SecurityHeadersMiddleware(app.logger, mux)
+	api := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		mux.ServeHTTP(w, r)
+	})
+	return auth.SecurityHeadersMiddleware(app.logger, api)
 }
 
 func (app *application) requireAuth(next http.HandlerFunc) http.HandlerFunc {
@@ -171,28 +187,17 @@ func (app *application) checkDatabasePermission(w http.ResponseWriter, r *http.R
 }
 
 func (app *application) handleUnauthenticated(w http.ResponseWriter, r *http.Request) {
-	accept := r.Header.Get("Accept")
-	if strings.Contains(accept, "application/json") || strings.HasPrefix(r.URL.Path, "/api/") {
-		w.WriteHeader(http.StatusUnauthorized)
-		app.renderWithContext(w, r, "error", pageData{
-			Title:        "401 Unauthorized",
-			Active:       "login",
-			ErrorMessage: "Authentication is required to access this resource.",
-		})
-		return
-	}
-	http.Redirect(w, r, "/login", http.StatusSeeOther)
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusUnauthorized)
+	writeJSON(w, map[string]string{"error": "Silakan login kembali."})
 }
 
 func (app *application) renderForbidden(w http.ResponseWriter, r *http.Request, message string) {
-	if message == "" {
-		message = "Access denied: you do not have permission to perform this action."
-	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusForbidden)
-	app.renderWithContext(w, r, "error", pageData{
-		Title:        "403 Forbidden",
-		ErrorMessage: message,
-	})
+	writeJSON(w, map[string]string{"error": message})
 }
 
 func (app *application) renderWithContext(w http.ResponseWriter, r *http.Request, page string, data pageData) {
