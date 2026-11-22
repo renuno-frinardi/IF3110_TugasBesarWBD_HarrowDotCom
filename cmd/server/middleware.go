@@ -64,20 +64,21 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("/audit-logs", app.requireAuth(app.requirePermission(authz.ActionPlatformAdmin, nil, app.auditLogsHandler)))
 
 	// Migration workflow JSON API
-	mux.HandleFunc("POST /api/migrations", app.requireAuth(app.migrationAPICreateHandler))
-	mux.HandleFunc("GET /api/migrations/{id}", app.requireAuth(app.migrationAPIGetHandler))
-	mux.HandleFunc("PUT /api/migrations/{id}", app.requireAuth(app.migrationAPIUpdateHandler))
-	mux.HandleFunc("PATCH /api/migrations/{id}", app.requireAuth(app.migrationAPIUpdateHandler))
-	mux.HandleFunc("POST /api/migrations/{id}/submit", app.requireAuth(app.migrationAPISubmitHandler))
-	mux.HandleFunc("POST /api/migrations/{id}/execute", app.requireAuth(app.migrationAPIExecuteHandler))
-	mux.HandleFunc("POST /api/migrations/{id}/rollback/request", app.requireAuth(app.migrationAPIRollbackRequestHandler))
-	mux.HandleFunc("POST /api/migrations/{id}/rollback/execute", app.requireAuth(app.migrationAPIRollbackExecuteHandler))
-	mux.HandleFunc("POST /api/migrations/{id}/forward/request", app.requireAuth(app.migrationAPIForwardRequestHandler))
-	mux.HandleFunc("POST /api/migrations/{id}/forward/execute", app.requireAuth(app.migrationAPIForwardExecuteHandler))
-	mux.HandleFunc("GET /api/approvals/{id}", app.requireAuth(app.approvalAPIGetHandler))
-	mux.HandleFunc("POST /api/approvals/{id}/approve", app.requireAuth(app.approvalAPIApproveHandler))
-	mux.HandleFunc("GET /api/databases/{id}/history", app.requireAuth(app.migrationHistoryAPIHandler))
-	mux.HandleFunc("GET /api/executions/{id}", app.requireAuth(app.executionAPIHandler))
+	mux.HandleFunc("GET /v2/databases/{db}/migrations", app.requireAuth(app.migrationDatabaseListHandler))
+	mux.HandleFunc("POST /v2/databases/{db}/migrations", app.requireAuth(app.migrationDraftCreateHandler))
+	mux.HandleFunc("GET /v2/migrations/{id}", app.requireAuth(app.migrationDetailHandler))
+	mux.HandleFunc("PATCH /v2/migrations/{id}", app.requireAuth(app.migrationDraftUpdateHandler))
+	mux.HandleFunc("POST /v2/migrations/{id}/submit", app.requireAuth(app.migrationReviewSubmitHandler))
+	mux.HandleFunc("POST /v2/migrations/{id}/approve", app.requireAuth(app.migrationApprovalHandler))
+	mux.HandleFunc("POST /v2/migrations/{id}/execute", app.requireAuth(app.migrationExecutionHandler))
+	mux.HandleFunc("POST /v2/migrations/{id}/rollback", app.requireAuth(app.migrationRollbackRequestHandler))
+	mux.HandleFunc("POST /v2/migrations/{id}/forward", app.requireAuth(app.migrationForwardRequestHandler))
+	mux.HandleFunc("GET /v2/reviews", app.requireAuth(app.reviewListHandler))
+	mux.HandleFunc("GET /v2/databases/{db}/history", app.requireAuth(app.migrationHistoryHandler))
+	mux.HandleFunc("GET /v2/jobs/{id}", app.requireAuth(app.jobDetailHandler))
+	mux.HandleFunc("POST /v2/jobs/{id}/resume", app.requireAuth(app.jobResumeHandler))
+	mux.HandleFunc("POST /v2/jobs/{id}/cancel-batches", app.requireAuth(app.jobBatchCancelHandler))
+	mux.HandleFunc("PUT /v2/groups/{id}/leader", app.requireAuth(app.requirePermission(authz.ActionPlatformAdmin, nil, app.groupLeaderAPIHandler)))
 
 	return auth.SecurityHeadersMiddleware(app.logger, mux)
 }
@@ -172,7 +173,7 @@ func (app *application) checkDatabasePermission(w http.ResponseWriter, r *http.R
 
 func (app *application) handleUnauthenticated(w http.ResponseWriter, r *http.Request) {
 	accept := r.Header.Get("Accept")
-	if strings.Contains(accept, "application/json") || strings.HasPrefix(r.URL.Path, "/api/") {
+	if strings.Contains(accept, "application/json") || strings.HasPrefix(r.URL.Path, "/v2/") {
 		w.WriteHeader(http.StatusUnauthorized)
 		app.renderWithContext(w, r, "error", pageData{
 			Title:        "401 Unauthorized",
