@@ -1,6 +1,7 @@
 package migration
 
 import (
+	"encoding/json"
 	"errors"
 	"time"
 )
@@ -40,8 +41,29 @@ const (
 )
 
 type BatchConfig struct {
-	Column string `json:"column"`
-	Size   int    `json:"size"`
+	Column string `json:"cursor_column"`
+	Size   int    `json:"batch_size"`
+}
+
+func (c *BatchConfig) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		CursorColumn string `json:"cursor_column"`
+		BatchSize    int    `json:"batch_size"`
+		Column       string `json:"column"`
+		Size         int    `json:"size"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	c.Column = raw.CursorColumn
+	if c.Column == "" {
+		c.Column = raw.Column
+	}
+	c.Size = raw.BatchSize
+	if c.Size == 0 {
+		c.Size = raw.Size
+	}
+	return nil
 }
 
 type Revision struct {
