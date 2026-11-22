@@ -240,6 +240,10 @@ func (s *Service) GetExecution(ctx context.Context, userID int, executionID int6
 	return e, nil
 }
 
+func (s *Service) CheckExecutionAccess(ctx context.Context, userID int, e *Execution) error {
+	return s.checkAccess(ctx, userID, e.DatabaseID, false)
+}
+
 func (s *Service) RequestRollback(ctx context.Context, userID, migrationID int) (*ApprovalRequest, error) {
 	m, err := s.store.GetByID(ctx, migrationID)
 	if err != nil {
