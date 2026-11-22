@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -396,6 +398,37 @@ func (s *Store) GetExecution(ctx context.Context, executionID int64) (*Execution
 	return e, err
 }
 
+func (s *Store) GetExecutionByJobID(ctx context.Context, jobID string) (*Execution, error) {
+	if strings.HasPrefix(jobID, "legacy-M") {
+		id, err := strconv.Atoi(strings.TrimPrefix(jobID, "legacy-M"))
+		if err != nil {
+			return nil, ErrNotFound
+		}
+		m, err := s.GetByID(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		status := ExecSuccess
+		if m.Status == StatusFailed {
+			status = ExecFailed
+		}
+		e := &Execution{
+			JobID: jobID, MigrationID: m.ID, DatabaseID: m.DatabaseID,
+			Action: ActionUp, Mode: ModeSingle, SQLExecuted: m.SQL,
+			Status: status, RowsCommitted: 0, Title: m.Title,
+			CreatedAt: m.CreatedAt,
+		}
+		if m.ErrorMessage != nil {
+			e.ErrorMessage = m.ErrorMessage
+		}
+		e.Batches = []ExecutionBatch{}
+		return e, nil
+	}
+	e, err := s.scanExecution(s.pool.QueryRow(ctx, `SELECT e.id,e.job_id,e.migration_id,e.revision_id,e.database_id,e.action,e.mode,e.batch_config,e.approval_request_id,e.rollback_of,e.sql_executed,e.status,e.rows_committed,e.error_message,e.requested_by,e.started_at,e.finished_at,e.created_at,e.updated_at,m.title,m.version,u.username
+              FROM executions e JOIN migrations m ON m.id=e.migration_id LEFT JOIN users u ON u.id=e.requested_by WHERE e.job_id=$1`, jobID))
+	return e, err
+}
+
 func (s *Store) scanExecution(row pgx.Row) (*Execution, error) {
 	var e Execution
 	var cfg []byte
@@ -443,6 +476,28 @@ func (s *Store) scanExecution(row pgx.Row) (*Execution, error) {
 	return &e, nil
 }
 
+func (s *Store) ListExecutionBatches(ctx context.Context, executionID int64) ([]ExecutionBatch, error) {
+	rows, err := s.pool.Query(ctx, `SELECT id,execution_id,batch_no,cursor_from,cursor_to,rows_affected,status,committed_at,reverted_at
+              FROM execution_batches WHERE execution_id=$1 ORDER BY batch_no`, executionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var batches []ExecutionBatch
+	for rows.Next() {
+		var b ExecutionBatch
+		var reverted sql.NullTime
+		if err := rows.Scan(&b.ID, &b.ExecutionID, &b.BatchNo, &b.CursorFrom, &b.CursorTo, &b.RowsAffected, &b.Status, &b.CommittedAt, &reverted); err != nil {
+			return nil, err
+		}
+		if reverted.Valid {
+			b.RevertedAt = &reverted.Time
+		}
+		batches = append(batches, b)
+	}
+	return batches, rows.Err()
+}
+
 func (s *Store) ListExecutionHistory(ctx context.Context, databaseID int, hide bool) ([]Execution, error) {
 	query := `SELECT e.id,e.job_id,e.migration_id,e.revision_id,e.database_id,e.action,e.mode,e.batch_config,e.approval_request_id,e.rollback_of,e.sql_executed,e.status,e.rows_committed,e.error_message,e.requested_by,e.started_at,e.finished_at,e.created_at,e.updated_at,m.title,m.version,u.username
               FROM executions e JOIN migrations m ON m.id=e.migration_id LEFT JOIN users u ON u.id=e.requested_by WHERE e.database_id=$1`
@@ -464,7 +519,52 @@ func (s *Store) ListExecutionHistory(ctx context.Context, databaseID int, hide b
 		}
 		history = append(history, *e)
 	}
-	return history, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+
+	legacyRows, err := s.pool.Query(ctx, `SELECT m.id,m.database_id,m.title,m.status,m.sql,m.error_message,m.created_at,m.finish_time,m.executed_by
+              FROM migrations m
+              WHERE m.database_id=$1 AND m.status IN ('executed','failed')
+              AND NOT EXISTS (SELECT 1 FROM executions e WHERE e.migration_id=m.id)`, databaseID)
+	if err != nil {
+		return nil, err
+	}
+	defer legacyRows.Close()
+	for legacyRows.Next() {
+		var e Execution
+		var status, title, sqlText string
+		var errorMessage sql.NullString
+		var finished sql.NullTime
+		var executedBy sql.NullInt64
+		if err := legacyRows.Scan(&e.MigrationID, &e.DatabaseID, &title, &status, &sqlText, &errorMessage, &e.CreatedAt, &finished, &executedBy); err != nil {
+			return nil, err
+		}
+		e.JobID = fmt.Sprintf("legacy-M%d", e.MigrationID)
+		e.Title = title
+		e.Action = ActionUp
+		e.Mode = ModeSingle
+		e.SQLExecuted = sqlText
+		if status == StatusFailed {
+			e.Status = ExecFailed
+		} else {
+			e.Status = ExecSuccess
+		}
+		if errorMessage.Valid {
+			v := errorMessage.String
+			e.ErrorMessage = &v
+		}
+		if finished.Valid {
+			e.FinishedAt = &finished.Time
+		}
+		if executedBy.Valid {
+			v := int(executedBy.Int64)
+			e.RequestedBy = &v
+		}
+		history = append(history, e)
+	}
+	return history, legacyRows.Err()
 }
 
 func (s *Store) GetDatabaseTarget(ctx context.Context, databaseID int) (string, bool, error) {
