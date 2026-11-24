@@ -3,7 +3,7 @@ import { api, setCSRF } from "./api";
 import { Field, Form, link } from "./ui";
 import { Workspace } from "./Workspace";
 import { MigrationScreen } from "./MigrationScreen";
-import "./app.css";
+import "./App.css";
 
 function currentRoute() {
   return window.location.hash.slice(1) || "/";
