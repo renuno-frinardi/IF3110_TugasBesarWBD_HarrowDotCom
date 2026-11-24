@@ -12,6 +12,17 @@ import (
 
 func (app *application) routes() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /session", app.requireAuth(func(w http.ResponseWriter, r *http.Request){
+		user, _ := auth.UserFromContext(r.Context())
+		session, _ := auth.SessionFromContext(r.Context())
+
+		writeJSON(w, map[string]any{
+			"id": user.ID,
+			"username": user.Username, 
+			"is_admin": user.IsAdmin,
+			"csrf_token": auth.CSRFToken(session)
+		})
+	}))
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(web.StaticFS()))))
 
 	// Public authentication endpoints
@@ -80,7 +91,12 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("POST /v2/jobs/{id}/cancel-batches", app.requireAuth(app.jobBatchCancelHandler))
 	mux.HandleFunc("PUT /v2/groups/{id}/leader", app.requireAuth(app.requirePermission(authz.ActionPlatformAdmin, nil, app.groupLeaderAPIHandler)))
 
-	return auth.SecurityHeadersMiddleware(app.logger, mux)
+	api := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		mux.ServeHTTP(w, r)
+	})
+	return auth.SecurityHeadersMiddleware(app.logger, api)
 }
 
 func (app *application) requireAuth(next http.HandlerFunc) http.HandlerFunc {
@@ -172,6 +188,10 @@ func (app *application) checkDatabasePermission(w http.ResponseWriter, r *http.R
 }
 
 func (app *application) handleUnauthenticated(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusUnauthorized)
+	writeJSON(w, map[string]string{"error": "Silakan login kembali."})
 	accept := r.Header.Get("Accept")
 	if strings.Contains(accept, "application/json") || strings.HasPrefix(r.URL.Path, "/v2/") {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -186,14 +206,10 @@ func (app *application) handleUnauthenticated(w http.ResponseWriter, r *http.Req
 }
 
 func (app *application) renderForbidden(w http.ResponseWriter, r *http.Request, message string) {
-	if message == "" {
-		message = "Access denied: you do not have permission to perform this action."
-	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusForbidden)
-	app.renderWithContext(w, r, "error", pageData{
-		Title:        "403 Forbidden",
-		ErrorMessage: message,
-	})
+	writeJSON(w, map[string]string{"error": message})
 }
 
 func (app *application) renderWithContext(w http.ResponseWriter, r *http.Request, page string, data pageData) {

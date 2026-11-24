@@ -440,12 +440,12 @@ func (app *application) exploreInsertRowHandler(w http.ResponseWriter, r *http.R
 	db := app.stores.forType(source)
 	connection, err := store.GetDatabaseConnection(r.Context(), db, id)
 	if err != nil || !connection.IsActive {
-		http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Database connection is unavailable or inactive.", ""), http.StatusSeeOther)
+		navigate(w, r, explorerRedirectURL(id, source, schema, table, page, "Database connection is unavailable or inactive.", ""), http.StatusSeeOther)
 		return
 	}
 	encPass, err := store.GetEncryptedPassword(r.Context(), db, id)
 	if err != nil {
-		http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to read database credentials.", ""), http.StatusSeeOther)
+		navigate(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to read database credentials.", ""), http.StatusSeeOther)
 		return
 	}
 
@@ -453,7 +453,7 @@ func (app *application) exploreInsertRowHandler(w http.ResponseWriter, r *http.R
 	if connection.DBType == "mariadb" {
 		target, openErr := store.OpenMariaDBTarget(r.Context(), connection, encPass, app.encryptionKeyOrEnv())
 		if openErr != nil {
-			http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to connect to MariaDB target.", ""), http.StatusSeeOther)
+			navigate(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to connect to MariaDB target.", ""), http.StatusSeeOther)
 			return
 		}
 		defer target.Close()
@@ -467,7 +467,7 @@ func (app *application) exploreInsertRowHandler(w http.ResponseWriter, r *http.R
 
 		cols, _, _, colErr := store.ReadMariaDBTable(r.Context(), target, schema, table, 1)
 		if colErr != nil {
-			http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to inspect table columns.", ""), http.StatusSeeOther)
+			navigate(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to inspect table columns.", ""), http.StatusSeeOther)
 			return
 		}
 
@@ -479,13 +479,13 @@ func (app *application) exploreInsertRowHandler(w http.ResponseWriter, r *http.R
 	} else {
 		cfg, cfgErr := app.postgresTargetPoolConfig(connection, encPass)
 		if cfgErr != nil {
-			http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Invalid target configuration.", ""), http.StatusSeeOther)
+			navigate(w, r, explorerRedirectURL(id, source, schema, table, page, "Invalid target configuration.", ""), http.StatusSeeOther)
 			return
 		}
 
 		target, poolErr := pgxpool.NewWithConfig(r.Context(), cfg)
 		if poolErr != nil {
-			http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to connect to PostgreSQL target.", ""), http.StatusSeeOther)
+			navigate(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to connect to PostgreSQL target.", ""), http.StatusSeeOther)
 			return
 		}
 
@@ -500,7 +500,7 @@ func (app *application) exploreInsertRowHandler(w http.ResponseWriter, r *http.R
 
 		cols, _, _, colErr := store.ReadPostgresTable(r.Context(), target, schema, table, 1)
 		if colErr != nil {
-			http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to inspect table columns.", ""), http.StatusSeeOther)
+			navigate(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to inspect table columns.", ""), http.StatusSeeOther)
 			return
 		}
 
@@ -513,12 +513,12 @@ func (app *application) exploreInsertRowHandler(w http.ResponseWriter, r *http.R
 
 	if execErr != nil {
 		app.logger.Printf("Insert row failed on connection %d (%s.%s): %v", id, schema, table, execErr)
-		http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Failed to insert row: "+execErr.Error(), ""), http.StatusSeeOther)
+		navigate(w, r, explorerRedirectURL(id, source, schema, table, page, "Failed to insert row: "+execErr.Error(), ""), http.StatusSeeOther)
 		return
 	}
 
 	_ = app.adminStore.RecordAuditLog(r.Context(), &user.ID, "data.insert_row", "table", schema+"."+table, &id, nil)
-	http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "", "New row inserted successfully."), http.StatusSeeOther)
+	navigate(w, r, explorerRedirectURL(id, source, schema, table, page, "", "New row inserted successfully."), http.StatusSeeOther)
 }
 
 func (app *application) exploreUpdateRowHandler(w http.ResponseWriter, r *http.Request) {
@@ -560,13 +560,13 @@ func (app *application) exploreUpdateRowHandler(w http.ResponseWriter, r *http.R
 	db := app.stores.forType(source)
 	connection, err := store.GetDatabaseConnection(r.Context(), db, id)
 	if err != nil || !connection.IsActive {
-		http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Database connection is unavailable or inactive.", ""), http.StatusSeeOther)
+		navigate(w, r, explorerRedirectURL(id, source, schema, table, page, "Database connection is unavailable or inactive.", ""), http.StatusSeeOther)
 		return
 	}
 
 	encPass, err := store.GetEncryptedPassword(r.Context(), db, id)
 	if err != nil {
-		http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to read database credentials.", ""), http.StatusSeeOther)
+		navigate(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to read database credentials.", ""), http.StatusSeeOther)
 		return
 	}
 
@@ -574,7 +574,7 @@ func (app *application) exploreUpdateRowHandler(w http.ResponseWriter, r *http.R
 	if connection.DBType == "mariadb" {
 		target, openErr := store.OpenMariaDBTarget(r.Context(), connection, encPass, app.encryptionKeyOrEnv())
 		if openErr != nil {
-			http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to connect to MariaDB target.", ""), http.StatusSeeOther)
+			navigate(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to connect to MariaDB target.", ""), http.StatusSeeOther)
 			return
 		}
 		defer target.Close()
@@ -588,7 +588,7 @@ func (app *application) exploreUpdateRowHandler(w http.ResponseWriter, r *http.R
 
 		cols, _, _, colErr := store.ReadMariaDBTable(r.Context(), target, schema, table, 1)
 		if colErr != nil {
-			http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to inspect table columns.", ""), http.StatusSeeOther)
+			navigate(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to inspect table columns.", ""), http.StatusSeeOther)
 			return
 		}
 
@@ -602,13 +602,13 @@ func (app *application) exploreUpdateRowHandler(w http.ResponseWriter, r *http.R
 	} else {
 		cfg, cfgErr := app.postgresTargetPoolConfig(connection, encPass)
 		if cfgErr != nil {
-			http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Invalid target configuration.", ""), http.StatusSeeOther)
+			navigate(w, r, explorerRedirectURL(id, source, schema, table, page, "Invalid target configuration.", ""), http.StatusSeeOther)
 			return
 		}
 
 		target, poolErr := pgxpool.NewWithConfig(r.Context(), cfg)
 		if poolErr != nil {
-			http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to connect to PostgreSQL target.", ""), http.StatusSeeOther)
+			navigate(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to connect to PostgreSQL target.", ""), http.StatusSeeOther)
 			return
 		}
 		defer target.Close()
@@ -622,7 +622,7 @@ func (app *application) exploreUpdateRowHandler(w http.ResponseWriter, r *http.R
 
 		cols, _, _, colErr := store.ReadPostgresTable(r.Context(), target, schema, table, 1)
 		if colErr != nil {
-			http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to inspect table columns.", ""), http.StatusSeeOther)
+			navigate(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to inspect table columns.", ""), http.StatusSeeOther)
 			return
 		}
 
@@ -637,12 +637,12 @@ func (app *application) exploreUpdateRowHandler(w http.ResponseWriter, r *http.R
 
 	if execErr != nil {
 		app.logger.Printf("Update row failed on connection %d (%s.%s): %v", id, schema, table, execErr)
-		http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Failed to update row: "+execErr.Error(), ""), http.StatusSeeOther)
+		navigate(w, r, explorerRedirectURL(id, source, schema, table, page, "Failed to update row: "+execErr.Error(), ""), http.StatusSeeOther)
 		return
 	}
 
 	_ = app.adminStore.RecordAuditLog(r.Context(), &user.ID, "data.update_row", "table", schema+"."+table, &id, nil)
-	http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "", "Row updated successfully."), http.StatusSeeOther)
+	navigate(w, r, explorerRedirectURL(id, source, schema, table, page, "", "Row updated successfully."), http.StatusSeeOther)
 }
 
 func (app *application) exploreDeleteRowHandler(w http.ResponseWriter, r *http.Request) {
@@ -684,13 +684,13 @@ func (app *application) exploreDeleteRowHandler(w http.ResponseWriter, r *http.R
 	db := app.stores.forType(source)
 	connection, err := store.GetDatabaseConnection(r.Context(), db, id)
 	if err != nil || !connection.IsActive {
-		http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Database connection is unavailable or inactive.", ""), http.StatusSeeOther)
+		navigate(w, r, explorerRedirectURL(id, source, schema, table, page, "Database connection is unavailable or inactive.", ""), http.StatusSeeOther)
 		return
 	}
 
 	encPass, err := store.GetEncryptedPassword(r.Context(), db, id)
 	if err != nil {
-		http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to read database credentials.", ""), http.StatusSeeOther)
+		navigate(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to read database credentials.", ""), http.StatusSeeOther)
 		return
 	}
 
@@ -698,7 +698,7 @@ func (app *application) exploreDeleteRowHandler(w http.ResponseWriter, r *http.R
 	if connection.DBType == "mariadb" {
 		target, openErr := store.OpenMariaDBTarget(r.Context(), connection, encPass, app.encryptionKeyOrEnv())
 		if openErr != nil {
-			http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to connect to MariaDB target.", ""), http.StatusSeeOther)
+			navigate(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to connect to MariaDB target.", ""), http.StatusSeeOther)
 			return
 		}
 		defer target.Close()
@@ -712,7 +712,7 @@ func (app *application) exploreDeleteRowHandler(w http.ResponseWriter, r *http.R
 
 		cols, _, _, colErr := store.ReadMariaDBTable(r.Context(), target, schema, table, 1)
 		if colErr != nil {
-			http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to inspect table columns.", ""), http.StatusSeeOther)
+			navigate(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to inspect table columns.", ""), http.StatusSeeOther)
 			return
 		}
 
@@ -724,13 +724,13 @@ func (app *application) exploreDeleteRowHandler(w http.ResponseWriter, r *http.R
 	} else {
 		cfg, cfgErr := app.postgresTargetPoolConfig(connection, encPass)
 		if cfgErr != nil {
-			http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Invalid target configuration.", ""), http.StatusSeeOther)
+			navigate(w, r, explorerRedirectURL(id, source, schema, table, page, "Invalid target configuration.", ""), http.StatusSeeOther)
 			return
 		}
 
 		target, poolErr := pgxpool.NewWithConfig(r.Context(), cfg)
 		if poolErr != nil {
-			http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to connect to PostgreSQL target.", ""), http.StatusSeeOther)
+			navigate(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to connect to PostgreSQL target.", ""), http.StatusSeeOther)
 			return
 		}
 		defer target.Close()
@@ -744,7 +744,7 @@ func (app *application) exploreDeleteRowHandler(w http.ResponseWriter, r *http.R
 
 		cols, _, _, colErr := store.ReadPostgresTable(r.Context(), target, schema, table, 1)
 		if colErr != nil {
-			http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to inspect table columns.", ""), http.StatusSeeOther)
+			navigate(w, r, explorerRedirectURL(id, source, schema, table, page, "Unable to inspect table columns.", ""), http.StatusSeeOther)
 			return
 		}
 
@@ -757,12 +757,12 @@ func (app *application) exploreDeleteRowHandler(w http.ResponseWriter, r *http.R
 
 	if execErr != nil {
 		app.logger.Printf("Delete row failed on connection %d (%s.%s): %v", id, schema, table, execErr)
-		http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "Failed to delete row: "+execErr.Error(), ""), http.StatusSeeOther)
+		navigate(w, r, explorerRedirectURL(id, source, schema, table, page, "Failed to delete row: "+execErr.Error(), ""), http.StatusSeeOther)
 		return
 	}
 
 	_ = app.adminStore.RecordAuditLog(r.Context(), &user.ID, "data.delete_row", "table", schema+"."+table, &id, nil)
-	http.Redirect(w, r, explorerRedirectURL(id, source, schema, table, page, "", "Row deleted successfully."), http.StatusSeeOther)
+	navigate(w, r, explorerRedirectURL(id, source, schema, table, page, "", "Row deleted successfully."), http.StatusSeeOther)
 }
 
 func (app *application) renderExplorerError(w http.ResponseWriter, r *http.Request, connection store.DatabaseConnection, err error) {
@@ -808,7 +808,7 @@ func (app *application) deleteConnectionHandler(w http.ResponseWriter, r *http.R
 		http.Error(w, "unable to delete database connection", http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, "/connections", http.StatusSeeOther)
+	navigate(w, r, "/connections", http.StatusSeeOther)
 }
 
 func (app *application) toggleConnectionActiveHandler(w http.ResponseWriter, r *http.Request) {
@@ -830,7 +830,7 @@ func (app *application) toggleConnectionActiveHandler(w http.ResponseWriter, r *
 		return
 	}
 
-	http.Redirect(w, r, "/connections/view?id="+strconv.FormatInt(id, 10)+"&source="+url.QueryEscape(r.FormValue("source")), http.StatusSeeOther)
+	navigate(w, r, "/connections/view?id="+strconv.FormatInt(id, 10)+"&source="+url.QueryEscape(r.FormValue("source")), http.StatusSeeOther)
 }
 
 func (app *application) editConnectionHandler(w http.ResponseWriter, r *http.Request) {
@@ -904,7 +904,7 @@ func (app *application) editConnectionHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	http.Redirect(w, r, "/connections/view?id="+strconv.FormatInt(id, 10)+"&source="+input.DBType, http.StatusSeeOther)
+	navigate(w, r, "/connections/view?id="+strconv.FormatInt(id, 10)+"&source="+input.DBType, http.StatusSeeOther)
 }
 
 func (app *application) newConnectionHandler(w http.ResponseWriter, r *http.Request) {
@@ -964,7 +964,7 @@ func (app *application) newConnectionHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	http.Redirect(w, r, "/connections", http.StatusSeeOther)
+	navigate(w, r, "/connections", http.StatusSeeOther)
 }
 
 func (app *application) testConnectionHandler(w http.ResponseWriter, r *http.Request) {

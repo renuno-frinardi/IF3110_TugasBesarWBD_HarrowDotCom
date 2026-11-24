@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
@@ -18,7 +19,6 @@ import (
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/explain"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/migration"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/store"
-	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/web"
 )
 
 type pageData struct {
@@ -199,14 +199,42 @@ func envIntOrDefault(key string, fallback int) int {
 	return value
 }
 
+func writeJSON(w http.ResponseWriter, value any){
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	if err:= json.NewEncoder(w).Encode(value); err!=nil{
+		log.Printf("write JSON response: %v", err)
+	}
+}
+
 func render(w http.ResponseWriter, page string, data pageData) {
-	tmpl, err := web.ParsePage(page)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Template error: %v", err), http.StatusInternalServerError)
-		return
+	response := map[string]any{
+		"page": page,
+		"title": data.Title,
+		"error": data.Error,
+		"errorMessage": data.ErrorMessage,
+		"success": data.Success,
+		"is_admin": data.IsAdmin,
+		"csrf_token": data.CSRFToken,
+		"stats": data.Stats,
+		"connections": data.Connections,
+		"postgres": data.PostgreSQLConnections,
+		"connection": data.Connection,
+		"explorer": data.Explorer,
+		"can_edit": data.CanEditMigration,
+		"users": data.Users,
+		"groups": data.Groups,
+		"grants": data.Grants,
+		"audit_logs": data.AuditLogs,
+		"explain_result": data.ExplainResult,
+	}
+	if data.CurrentUser != nil {
+		response["username"] = data.CurrentUser.Username
 	}
 
-	if err := tmpl.ExecuteTemplate(w, "base", data); err != nil {
-		log.Printf("Render %s: %v", page, err)
-	}
+	writeJSON(w, response)
+}
+
+func navigate(w http.ResponseWriter, _ *http.Request, target string, _ int){
+	writeJSON(w, map[string]string{"navigate": target})
 }

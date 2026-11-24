@@ -12,7 +12,7 @@ func (app *application) loginHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		if rawToken := app.sessions.ReadCookie(r); rawToken != "" {
 			if sess, _, err := app.sessions.ValidateAndTouch(r.Context(), rawToken); err == nil && sess != nil {
-				http.Redirect(w, r, "/", http.StatusSeeOther)
+				navigate(w, r, "/", http.StatusSeeOther)
 				return
 			}
 		}
@@ -50,14 +50,14 @@ func (app *application) loginHandler(w http.ResponseWriter, r *http.Request) {
 	})
 
 	app.sessions.SetCookie(w, sess.RawToken)
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	navigate(w, r, "/", http.StatusSeeOther)
 }
 
 func (app *application) signupHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		if rawToken := app.sessions.ReadCookie(r); rawToken != "" {
 			if sess, _, err := app.sessions.ValidateAndTouch(r.Context(), rawToken); err == nil && sess != nil {
-				http.Redirect(w, r, "/", http.StatusSeeOther)
+				navigate(w, r, "/", http.StatusSeeOther)
 				return
 			}
 		}
@@ -108,12 +108,12 @@ func (app *application) signupHandler(w http.ResponseWriter, r *http.Request) {
 
 	_, sess, err := app.authSvc.Authenticate(r.Context(), username, password)
 	if err != nil {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		navigate(w, r, "/login", http.StatusSeeOther)
 		return
 	}
 
 	app.sessions.SetCookie(w, sess.RawToken)
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	navigate(w, r, "/", http.StatusSeeOther)
 }
 
 func (app *application) logoutHandler(w http.ResponseWriter, r *http.Request) {
@@ -127,5 +127,5 @@ func (app *application) logoutHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = app.sessions.Revoke(r.Context(), rawToken)
 	app.sessions.ClearCookie(w)
-	http.Redirect(w, r, "/login", http.StatusSeeOther)
+	navigate(w, r, "/login", http.StatusSeeOther)
 }
