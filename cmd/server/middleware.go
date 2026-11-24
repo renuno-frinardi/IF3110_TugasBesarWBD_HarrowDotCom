@@ -12,15 +12,15 @@ import (
 
 func (app *application) routes() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /session", app.requireAuth(func(w http.ResponseWriter, r *http.Request){
+	mux.HandleFunc("GET /session", app.requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		user, _ := auth.UserFromContext(r.Context())
 		session, _ := auth.SessionFromContext(r.Context())
 
-		writeJSON(w, map[string]any{
-			"id": user.ID,
-			"username": user.Username, 
-			"is_admin": user.IsAdmin,
-			"csrf_token": auth.CSRFToken(session)
+		writeJSON(w, http.StatusOK, map[string]any{
+			"id":         user.ID,
+			"username":   user.Username,
+			"is_admin":   user.IsAdmin,
+			"csrf_token": auth.CSRFToken(session),
 		})
 	}))
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(web.StaticFS()))))
@@ -188,28 +188,26 @@ func (app *application) checkDatabasePermission(w http.ResponseWriter, r *http.R
 }
 
 func (app *application) handleUnauthenticated(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(http.StatusUnauthorized)
-	writeJSON(w, map[string]string{"error": "Silakan login kembali."})
 	accept := r.Header.Get("Accept")
 	if strings.Contains(accept, "application/json") || strings.HasPrefix(r.URL.Path, "/v2/") {
-		w.WriteHeader(http.StatusUnauthorized)
-		app.renderWithContext(w, r, "error", pageData{
-			Title:        "401 Unauthorized",
-			Active:       "login",
-			ErrorMessage: "Authentication is required to access this resource.",
-		})
+		writeJSON(w, http.StatusUnauthorized, apiError{Error: "Silakan login kembali."})
 		return
 	}
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
 func (app *application) renderForbidden(w http.ResponseWriter, r *http.Request, message string) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
+	if strings.Contains(r.Header.Get("Accept"), "application/json") || strings.HasPrefix(r.URL.Path, "/v2/") {
+		writeJSON(w, http.StatusForbidden, apiError{Error: message})
+		return
+	}
 	w.WriteHeader(http.StatusForbidden)
-	writeJSON(w, map[string]string{"error": message})
+	app.renderWithContext(w, r, "error", pageData{
+		Title:        "403 Forbidden",
+		ErrorMessage: message,
+	})
 }
 
 func (app *application) renderWithContext(w http.ResponseWriter, r *http.Request, page string, data pageData) {
