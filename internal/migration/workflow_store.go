@@ -327,7 +327,6 @@ func (s *Store) CreateExecution(ctx context.Context, jobID string, migrationID i
 }
 
 func (s *Store) RecordExecutionResult(ctx context.Context, result ExecutionResult) error {
-	// Always use a separate metadata transaction detached from target execution cancellation/rollback.
 	recCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 
@@ -372,7 +371,6 @@ func (s *Store) RecordExecutionResult(ctx context.Context, result ExecutionResul
 		finished = *result.FinishedAt
 	}
 
-	// Record append-only attempt row (guarded by SAVEPOINT so pre-000005 test DBs remain compatible).
 	if _, spErr := tx.Exec(recCtx, `SAVEPOINT sp_attempt`); spErr == nil {
 		jobKind := result.JobKind
 		if jobKind == "" {
@@ -433,7 +431,6 @@ func (s *Store) RecordExecutionResult(ctx context.Context, result ExecutionResul
 				_, err = tx.Exec(recCtx, `UPDATE migrations m SET version=COALESCE(m.version,(SELECT COALESCE(MAX(version),0)+1 FROM migrations WHERE database_id=$2)),status='executed',active=true,error_message=NULL,finish_time=NOW(),updated_at=NOW() WHERE m.id=$1`, migrationID, databaseID)
 			}
 		case ExecFailed:
-			// Failed rollback must not alter active position or mark an active migration as failed.
 			if action != ActionDown {
 				_, err = tx.Exec(recCtx, `UPDATE migrations SET status='failed',error_message=NULLIF($2,''),finish_time=NOW(),updated_at=NOW() WHERE id=$1`, migrationID, result.ErrorMessage)
 			}
@@ -680,7 +677,6 @@ func (s *Store) ListExecutionHistory(ctx context.Context, databaseID int, hide b
 	}
 	rows.Close()
 
-	// Expand append-only execution_attempts so every attempt (including failed retries) remains visible.
 	attemptsByExec := make(map[int64][]Execution)
 	if len(execIDs) > 0 {
 		attRows, attErr := s.pool.Query(ctx, `

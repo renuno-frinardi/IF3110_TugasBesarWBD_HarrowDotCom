@@ -14,8 +14,6 @@ import (
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/store"
 )
 
-// OpenTargetPostgresForWorker opens a dedicated pgx.Conn to the target PostgreSQL database
-// using credentials stored in database_connections, intended for background worker execution.
 func OpenTargetPostgresForWorker(ctx context.Context, metadataPool *pgxpool.Pool, databaseID int, hexKey string) (*pgx.Conn, error) {
 	if metadataPool == nil {
 		return nil, errors.New("metadata pool is not configured")
