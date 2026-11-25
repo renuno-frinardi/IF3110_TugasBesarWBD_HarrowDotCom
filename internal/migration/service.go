@@ -34,6 +34,12 @@ func NewServiceWithPublisher(store *Store, access *DatabaseAccess, publisher Pub
 	}
 }
 
+func (s *Service) SetLogger(logger *slog.Logger) {
+	if logger != nil {
+		s.logger = logger
+	}
+}
+
 func (s *Service) checkAccess(ctx context.Context, userID int, databaseID int, needEdit bool) error {
 	if userID <= 0 {
 		return Forbidden

@@ -104,7 +104,11 @@ func (s *Service) Submit(ctx context.Context, userID, migrationID int, downSQL s
 		return nil, fmt.Errorf("%w: no groups have access", InvalidInput)
 	}
 	req, err := s.store.CreateApprovalRequest(ctx, migrationID, r.ID, ActionUp, nil, userID, groups, true)
-	s.logger.Info("migration.submitted", "migration_id", migrationID, "revision_id", r.ID, "actor", userID)
+	if err == nil {
+		s.logger.InfoContext(ctx, "migration.submit",
+			"migration_id", migrationID, "revision_id", r.ID, "database", fmt.Sprintf("%d", m.DatabaseID),
+			"actor", fmt.Sprintf("%d", userID), "status", StatusPendingReview)
+	}
 	return req, err
 }
 
@@ -124,7 +128,9 @@ func (s *Service) Approve(ctx context.Context, userID int, requestID int64) (*Ap
 	if err != nil {
 		return nil, err
 	}
-	s.logger.Info("migration.approved", "approval_request_id", requestID, "actor", userID)
+	s.logger.InfoContext(ctx, "migration.approve",
+		"migration_id", m.ID, "approval_request_id", requestID, "database", fmt.Sprintf("%d", m.DatabaseID),
+		"actor", fmt.Sprintf("%d", userID), "status", updated.Status)
 	return updated, nil
 }
 
@@ -209,12 +215,36 @@ func (s *Service) executeJob(ctx context.Context, m *Migration, r *Revision, act
 	if err != nil {
 		return nil, err
 	}
-	job := JobMessage{JobID: jobID, ExecutionID: e.ID, DatabaseID: m.DatabaseID, MigrationID: m.ID, RevisionID: r.ID, Action: action, Mode: r.Mode, BatchConfig: r.BatchConfig, SQL: sqlText, TraceContext: trace}
+	job := JobMessage{
+		JobID:        jobID,
+		ExecutionID:  e.ID,
+		DatabaseID:   m.DatabaseID,
+		MigrationID:  m.ID,
+		RevisionID:   r.ID,
+		RevisionNo:   r.RevisionNo,
+		Action:       action,
+		Mode:         r.Mode,
+		BatchConfig:  r.BatchConfig,
+		SQL:          sqlText,
+		DownSQL:      r.DownSQL,
+		Irreversible: r.Irreversible,
+		RequestedBy:  userID,
+		TraceContext: trace,
+	}
 	if _, err := s.publisher.PublishJob(ctx, job); err != nil {
-		_ = s.store.RecordExecutionResult(context.Background(), ExecutionResult{JobID: jobID, Status: ExecFailed, ErrorMessage: err.Error()})
+		_ = s.store.RecordExecutionResult(context.Background(), ExecutionResult{JobID: jobID, Attempt: 1, Status: ExecFailed, ErrorMessage: err.Error()})
 		return e, fmt.Errorf("publish migration job: %w", err)
 	}
-	s.logger.Info("migration.job", "job_id", jobID, "execution_id", e.ID, "migration_id", m.ID, "actor", userID)
+	eventName := "migration.execute"
+	switch action {
+	case ActionDown:
+		eventName = "migration.rollback"
+	case ActionForward:
+		eventName = "migration.forward"
+	}
+	s.logger.InfoContext(ctx, eventName,
+		"job_id", jobID, "execution_id", e.ID, "migration_id", m.ID,
+		"database", fmt.Sprintf("%d", m.DatabaseID), "actor", fmt.Sprintf("%d", userID), "status", ExecPending)
 	return e, nil
 }
 
@@ -242,6 +272,10 @@ func (s *Service) GetExecution(ctx context.Context, userID int, executionID int6
 
 func (s *Service) CheckExecutionAccess(ctx context.Context, userID int, e *Execution) error {
 	return s.checkAccess(ctx, userID, e.DatabaseID, false)
+}
+
+func (s *Service) CheckExecutionEditAccess(ctx context.Context, userID int, e *Execution) error {
+	return s.checkAccess(ctx, userID, e.DatabaseID, true)
 }
 
 func (s *Service) RequestRollback(ctx context.Context, userID, migrationID int) (*ApprovalRequest, error) {
@@ -274,7 +308,13 @@ func (s *Service) RequestRollback(ctx context.Context, userID, migrationID int) 
 	if err != nil {
 		return nil, err
 	}
-	return s.store.CreateApprovalRequest(ctx, migrationID, r.ID, ActionDown, &applied.ID, userID, groups, false)
+	req, err := s.store.CreateApprovalRequest(ctx, migrationID, r.ID, ActionDown, &applied.ID, userID, groups, false)
+	if err == nil {
+		s.logger.InfoContext(ctx, "migration.rollback.requested",
+			"migration_id", migrationID, "revision_id", r.ID, "database", fmt.Sprintf("%d", m.DatabaseID),
+			"actor", fmt.Sprintf("%d", userID), "status", ApprovalPending)
+	}
+	return req, err
 }
 
 func (s *Service) ExecuteRollback(ctx context.Context, userID, migrationID int, trace string) (*Execution, error) {
@@ -284,6 +324,13 @@ func (s *Service) ExecuteRollback(ctx context.Context, userID, migrationID int, 
 	}
 	if err := s.checkAccess(ctx, userID, m.DatabaseID, true); err != nil {
 		return nil, err
+	}
+	blocked, status, err := s.store.HasBlockingExecution(ctx, m.DatabaseID)
+	if err != nil {
+		return nil, err
+	}
+	if blocked {
+		return nil, fmt.Errorf("%w: execution is %s", ErrJobInProgress, status)
 	}
 	active, err := s.store.GetActiveMigration(ctx, m.DatabaseID)
 	if err != nil {
@@ -330,7 +377,13 @@ func (s *Service) RequestForward(ctx context.Context, userID, migrationID int) (
 	if err != nil {
 		return nil, err
 	}
-	return s.store.CreateApprovalRequest(ctx, migrationID, r.ID, ActionForward, &down.ID, userID, groups, false)
+	req, err := s.store.CreateApprovalRequest(ctx, migrationID, r.ID, ActionForward, &down.ID, userID, groups, false)
+	if err == nil {
+		s.logger.InfoContext(ctx, "migration.forward.requested",
+			"migration_id", migrationID, "revision_id", r.ID, "database", fmt.Sprintf("%d", m.DatabaseID),
+			"actor", fmt.Sprintf("%d", userID), "status", ApprovalPending)
+	}
+	return req, err
 }
 
 func (s *Service) ExecuteForward(ctx context.Context, userID, migrationID int, trace string) (*Execution, error) {
@@ -340,6 +393,13 @@ func (s *Service) ExecuteForward(ctx context.Context, userID, migrationID int, t
 	}
 	if err := s.checkAccess(ctx, userID, m.DatabaseID, true); err != nil {
 		return nil, err
+	}
+	blocked, status, err := s.store.HasBlockingExecution(ctx, m.DatabaseID)
+	if err != nil {
+		return nil, err
+	}
+	if blocked {
+		return nil, fmt.Errorf("%w: execution is %s", ErrJobInProgress, status)
 	}
 	down, err := s.store.GetLatestDownExecution(ctx, migrationID)
 	if err != nil {
