@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"strconv"
@@ -13,11 +14,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/admin"
+	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/async"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/auth"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/authz"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/explain"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/migration"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/store"
+	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/telemetry"
 )
 
 type pageData struct {
@@ -85,14 +88,18 @@ type application struct {
 	adminStore    *admin.Store
 	migStore      *migration.Store
 	migService    *migration.Service
+	jobQueue      *async.Queue
 	encryptionKey string
 	logger        *log.Logger
+	slogLogger    *slog.Logger
 }
 
 func main() {
 	redactingOut := auth.NewRedactingWriter(os.Stderr)
 	log.SetOutput(redactingOut)
 	logger := log.New(redactingOut, "", log.LstdFlags)
+	slogLogger := telemetry.NewJSONLogger(os.Stdout, slog.LevelInfo)
+	slog.SetDefault(slogLogger)
 
 	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
 		log.Fatalf("failed to load .env: %v", err)
@@ -100,6 +107,16 @@ func main() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
+	shutdownTracing, err := telemetry.InitTracing(ctx, "harrow-api", os.Stdout)
+	if err != nil {
+		log.Fatalf("Failed to initialize OpenTelemetry tracing: %v", err)
+	}
+	defer func() {
+		flushCtx, flushCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer flushCancel()
+		_ = shutdownTracing(flushCtx)
+	}()
 
 	postgresURL := envOrDefault("POSTGRES_DATABASE_URL", store.PostgresAppURL(
 		envOrDefault("POSTGRES_HOST", "localhost"), envIntOrDefault("POSTGRES_PORT", 5433),
@@ -157,6 +174,9 @@ func main() {
 	dbAuthz := authz.NewDBAuthorizer(postgresDB.DB)
 	adminStore := admin.NewStore(postgresDB.DB, authSvc, sessMgr)
 	migStore := migration.NewStore(pgPool)
+	jobQueue := async.NewQueue(pgPool, slogLogger, envIntOrDefault("WORKER_MAX_RETRIES", 3))
+	migSvc := migration.NewServiceWithPublisher(migStore, migration.NewDatabaseAccess(pgPool), jobQueue)
+	migSvc.SetLogger(slogLogger)
 
 	app := &application{
 		stores:        stores,
@@ -166,9 +186,11 @@ func main() {
 		dbAuthorizer:  dbAuthz,
 		adminStore:    adminStore,
 		migStore:      migStore,
-		migService:    migration.NewServiceWithPublisher(migStore, migration.NewDatabaseAccess(pgPool), migration.NewStubPublisher(nil)),
+		migService:    migSvc,
+		jobQueue:      jobQueue,
 		encryptionKey: os.Getenv("ENCRYPTION_KEY"),
 		logger:        logger,
+		slogLogger:    slogLogger,
 	}
 
 	port := os.Getenv("PORT")
@@ -176,7 +198,7 @@ func main() {
 		port = "8080"
 	}
 
-	logger.Printf("Harrow is running at http://localhost:%s", port)
+	slogLogger.Info("server.started", "port", port, "status", "listening")
 
 	if err := http.ListenAndServe(":"+port, app.routes()); err != nil {
 		log.Fatalf("Server stopped: %v", err)

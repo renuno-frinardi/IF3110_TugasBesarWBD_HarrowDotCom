@@ -3,12 +3,26 @@ package main
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/auth"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/authz"
+	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/telemetry"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/web"
+	"go.opentelemetry.io/otel/attribute"
 )
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (sr *statusRecorder) WriteHeader(code int) {
+	sr.status = code
+	sr.ResponseWriter.WriteHeader(code)
+}
 
 func (app *application) routes() http.Handler {
 	mux := http.NewServeMux()
@@ -92,9 +106,41 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("PUT /v2/groups/{id}/leader", app.requireAuth(app.requirePermission(authz.ActionPlatformAdmin, nil, app.groupLeaderAPIHandler)))
 
 	api := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		corrID := strings.TrimSpace(r.Header.Get("X-Correlation-ID"))
+		if corrID == "" {
+			corrID = telemetry.NewCorrelationID()
+		}
+		w.Header().Set("X-Correlation-ID", corrID)
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		mux.ServeHTTP(w, r)
+
+		ctx := telemetry.WithCorrelationID(r.Context(), corrID)
+		if incomingTrace := strings.TrimSpace(r.Header.Get("traceparent")); incomingTrace != "" {
+			ctx = telemetry.ExtractTraceContext(ctx, incomingTrace)
+		}
+
+		ctx, span := telemetry.Tracer("api").Start(ctx, r.Method+" "+r.URL.Path)
+		defer span.End()
+
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		start := time.Now()
+		mux.ServeHTTP(rec, r.WithContext(ctx))
+		dur := time.Since(start)
+
+		span.SetAttributes(
+			attribute.String("http.method", r.Method),
+			attribute.String("http.target", auth.SanitizeURL(r.URL)),
+			attribute.Int("http.status_code", rec.status),
+		)
+
+		if app.slogLogger != nil {
+			app.slogLogger.InfoContext(ctx, "http.request",
+				"method", r.Method,
+				"path", auth.SanitizeURL(r.URL),
+				"status", strconv.Itoa(rec.status),
+				"duration_ms", float64(dur.Microseconds())/1000.0,
+			)
+		}
 	})
 	return auth.SecurityHeadersMiddleware(app.logger, api)
 }
@@ -123,11 +169,13 @@ func (app *application) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 
 		if err := auth.ValidateRequestCSRF(r, sess); err != nil {
 			ctx := auth.WithUserAndSession(r.Context(), user, sess)
+			ctx = telemetry.WithActorID(ctx, int(user.ID))
 			app.renderForbidden(w, r.WithContext(ctx), "Invalid or missing CSRF token.")
 			return
 		}
 
 		ctx := auth.WithUserAndSession(r.Context(), user, sess)
+		ctx = telemetry.WithActorID(ctx, int(user.ID))
 		next(w, r.WithContext(ctx))
 	}
 }
