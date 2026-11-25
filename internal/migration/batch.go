@@ -14,7 +14,7 @@ var placeholderPattern = regexp.MustCompile(`\{\{([a-z_]+)\}\}`)
 
 func normalizeBatchConfig(mode string, cfg BatchConfig) (BatchConfig, error) {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case "", ModeSingle:
+	case "", ModeSingle, ModeNormal:
 		return BatchConfig{}, nil
 	case ModeBatch:
 		if !batchColumnPattern.MatchString(cfg.Column) {
@@ -25,19 +25,20 @@ func normalizeBatchConfig(mode string, cfg BatchConfig) (BatchConfig, error) {
 		}
 		return cfg, nil
 	default:
-		return BatchConfig{}, fmt.Errorf("%w: mode must be single or batch", InvalidInput)
+		return BatchConfig{}, fmt.Errorf("%w: mode must be normal, single, or batch", InvalidInput)
 	}
 }
 
 func validateBatchSQL(mode string, upSQL, downSQL string) error {
-	if mode == ModeSingle {
+	normalized := strings.ToLower(strings.TrimSpace(mode))
+	if normalized == "" || normalized == ModeSingle || normalized == ModeNormal {
 		for _, match := range placeholderPattern.FindAllStringSubmatch(upSQL+"\n"+downSQL, -1) {
 			return fmt.Errorf("%w: placeholder %s is only allowed in batch mode", InvalidInput, match[0])
 		}
 		return nil
 	}
-	if mode != ModeBatch {
-		return fmt.Errorf("%w: mode must be single or batch", InvalidInput)
+	if normalized != ModeBatch {
+		return fmt.Errorf("%w: mode must be normal, single, or batch", InvalidInput)
 	}
 	for _, text := range []string{upSQL, downSQL} {
 		for _, match := range placeholderPattern.FindAllStringSubmatch(text, -1) {

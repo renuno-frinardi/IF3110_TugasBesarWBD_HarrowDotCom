@@ -6,6 +6,9 @@ func TestNormalizeBatchConfig(t *testing.T) {
 	if _, err := normalizeBatchConfig(ModeSingle, BatchConfig{Column: "ignored", Size: 99}); err != nil {
 		t.Fatalf("single mode should normalize: %v", err)
 	}
+	if _, err := normalizeBatchConfig(ModeNormal, BatchConfig{Column: "ignored", Size: 99}); err != nil {
+		t.Fatalf("normal mode should normalize: %v", err)
+	}
 	cfg, err := normalizeBatchConfig(ModeBatch, BatchConfig{Column: "id", Size: 500})
 	if err != nil {
 		t.Fatalf("valid batch config rejected: %v", err)

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -326,27 +327,42 @@ func (s *Store) CreateExecution(ctx context.Context, jobID string, migrationID i
 }
 
 func (s *Store) RecordExecutionResult(ctx context.Context, result ExecutionResult) error {
-	tx, err := s.pool.Begin(ctx)
+	recCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+
+	tx, err := s.pool.Begin(recCtx)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
+	defer func() { _ = tx.Rollback(recCtx) }()
+
 	var id, migrationID int64
 	var databaseID int
-	var action, status string
-	err = tx.QueryRow(ctx, `SELECT id,migration_id,database_id,action,status FROM executions WHERE job_id=$1 FOR UPDATE`, result.JobID).Scan(&id, &migrationID, &databaseID, &action, &status)
+	var action, status, sqlExecuted string
+	err = tx.QueryRow(recCtx, `SELECT id,migration_id,database_id,action,status,sql_executed FROM executions WHERE job_id=$1 FOR UPDATE`, result.JobID).Scan(&id, &migrationID, &databaseID, &action, &status, &sqlExecuted)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound
 	}
 	if err != nil {
 		return err
 	}
-	if status == ExecSuccess || status == ExecFailed || status == ExecPartial || status == ExecPartiallyReverted {
+
+	isTerminal := status == ExecSuccess || status == ExecFailed || status == ExecPartial || status == ExecPartiallyReverted
+	if isTerminal && !result.AllowReopen {
 		if status == result.Status {
-			return tx.Commit(ctx)
+			return tx.Commit(recCtx)
 		}
 		return ErrInvalidState
 	}
+	if status == ExecSuccess && result.AllowReopen {
+		return ErrInvalidState
+	}
+
+	attemptNo := result.Attempt
+	if attemptNo < 1 {
+		attemptNo = 1
+	}
+
 	var started, finished any
 	if result.StartedAt != nil {
 		started = *result.StartedAt
@@ -354,30 +370,152 @@ func (s *Store) RecordExecutionResult(ctx context.Context, result ExecutionResul
 	if result.FinishedAt != nil {
 		finished = *result.FinishedAt
 	}
-	_, err = tx.Exec(ctx, `UPDATE executions SET status=$2,rows_committed=GREATEST(rows_committed,$3),
-             error_message=NULLIF($4,''),started_at=COALESCE(started_at,$5),finished_at=COALESCE($6,finished_at) WHERE id=$1`,
-		id, result.Status, result.RowsCommitted, result.ErrorMessage, started, finished)
-	if err != nil {
-		return err
-	}
-	switch result.Status {
-	case ExecRunning:
-		_, err = tx.Exec(ctx, `UPDATE migrations SET status='running',updated_at=NOW() WHERE id=$1`, migrationID)
-	case ExecSuccess:
-		if action == ActionDown {
-			_, err = tx.Exec(ctx, `UPDATE migrations SET status='executed',active=false,finish_time=NOW(),updated_at=NOW() WHERE id=$1`, migrationID)
-		} else {
-			_, err = tx.Exec(ctx, `UPDATE migrations m SET version=COALESCE(m.version,(SELECT COALESCE(MAX(version),0)+1 FROM migrations WHERE database_id=$2)),status='executed',active=true,finish_time=NOW(),updated_at=NOW() WHERE m.id=$1`, migrationID, databaseID)
+
+	if _, spErr := tx.Exec(recCtx, `SAVEPOINT sp_attempt`); spErr == nil {
+		jobKind := result.JobKind
+		if jobKind == "" {
+			jobKind = "execute"
 		}
-	case ExecFailed:
-		_, err = tx.Exec(ctx, `UPDATE migrations SET status='failed',error_message=NULLIF($2,''),finish_time=NOW(),updated_at=NOW() WHERE id=$1`, migrationID, result.ErrorMessage)
-	case ExecPartial, ExecPartiallyReverted:
-		_, err = tx.Exec(ctx, `UPDATE migrations SET status='failed',error_message=NULLIF($2,''),finish_time=NOW(),updated_at=NOW() WHERE id=$1`, migrationID, result.ErrorMessage)
+		attemptStatus := result.Status
+		if attemptStatus == ExecPending {
+			attemptStatus = ExecFailed
+		}
+		_, attErr := tx.Exec(recCtx, `
+			INSERT INTO execution_attempts (execution_id, job_id, attempt_no, job_kind, status, rows_committed, error_message, sql_executed, worker_id, started_at, finished_at)
+			VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7,''), $8, NULLIF($9,''), COALESCE($10, NOW()), $11)
+			ON CONFLICT (execution_id, attempt_no) DO UPDATE SET
+				status = EXCLUDED.status,
+				rows_committed = GREATEST(execution_attempts.rows_committed, EXCLUDED.rows_committed),
+				error_message = COALESCE(EXCLUDED.error_message, execution_attempts.error_message),
+				finished_at = COALESCE(EXCLUDED.finished_at, execution_attempts.finished_at)
+		`, id, result.JobID, attemptNo, jobKind, attemptStatus, result.RowsCommitted, result.ErrorMessage, sqlExecuted, result.WorkerID, started, finished)
+		if attErr == nil {
+			_, attErr = tx.Exec(recCtx, `UPDATE executions SET attempt = GREATEST(attempt, $2) WHERE id = $1`, id, attemptNo)
+		}
+		if attErr != nil {
+			_, _ = tx.Exec(recCtx, `ROLLBACK TO SAVEPOINT sp_attempt`)
+		} else {
+			_, _ = tx.Exec(recCtx, `RELEASE SAVEPOINT sp_attempt`)
+		}
+	}
+
+	nextExecStatus := result.Status
+	if result.RetryScheduled {
+		nextExecStatus = ExecPending
+		finished = nil
+	}
+
+	if result.AllowReopen && nextExecStatus == ExecRunning {
+		_, err = tx.Exec(recCtx, `UPDATE executions SET status=$2,rows_committed=GREATEST(rows_committed,$3),
+             error_message=NULL,started_at=COALESCE(started_at,$4,NOW()),finished_at=NULL,updated_at=NOW() WHERE id=$1`,
+			id, nextExecStatus, result.RowsCommitted, started)
+	} else {
+		_, err = tx.Exec(recCtx, `UPDATE executions SET status=$2,rows_committed=GREATEST(rows_committed,$3),
+             error_message=NULLIF($4,''),started_at=COALESCE(started_at,$5),finished_at=CASE WHEN $7 THEN NULL ELSE COALESCE($6,finished_at) END,updated_at=NOW() WHERE id=$1`,
+			id, nextExecStatus, result.RowsCommitted, result.ErrorMessage, started, finished, result.RetryScheduled)
 	}
 	if err != nil {
 		return err
 	}
-	return tx.Commit(ctx)
+
+	if !result.RetryScheduled {
+		switch nextExecStatus {
+		case ExecRunning:
+			if action != ActionDown {
+				_, err = tx.Exec(recCtx, `UPDATE migrations SET status='running',updated_at=NOW() WHERE id=$1`, migrationID)
+			}
+		case ExecSuccess:
+			if action == ActionDown {
+				_, err = tx.Exec(recCtx, `UPDATE migrations SET status='executed',active=false,finish_time=NOW(),updated_at=NOW() WHERE id=$1`, migrationID)
+			} else {
+				_, err = tx.Exec(recCtx, `UPDATE migrations m SET version=COALESCE(m.version,(SELECT COALESCE(MAX(version),0)+1 FROM migrations WHERE database_id=$2)),status='executed',active=true,error_message=NULL,finish_time=NOW(),updated_at=NOW() WHERE m.id=$1`, migrationID, databaseID)
+			}
+		case ExecFailed:
+			if action != ActionDown {
+				_, err = tx.Exec(recCtx, `UPDATE migrations SET status='failed',error_message=NULLIF($2,''),finish_time=NOW(),updated_at=NOW() WHERE id=$1`, migrationID, result.ErrorMessage)
+			}
+		case ExecPartial, ExecPartiallyReverted:
+			if action != ActionDown {
+				_, err = tx.Exec(recCtx, `UPDATE migrations SET status='failed',error_message=NULLIF($2,''),finish_time=NOW(),updated_at=NOW() WHERE id=$1`, migrationID, result.ErrorMessage)
+			}
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return tx.Commit(recCtx)
+}
+
+func (s *Store) RecordBatchProgress(ctx context.Context, batch BatchResult) error {
+	recCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+
+	tx, err := s.pool.Begin(recCtx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(recCtx) }()
+
+	status := batch.Status
+	if status == "" {
+		status = "committed"
+	}
+	_, err = tx.Exec(recCtx, `
+		INSERT INTO execution_batches (execution_id, batch_no, cursor_from, cursor_to, rows_affected, status, committed_at)
+		VALUES ($1, $2, $3, $4, $5, $6, NOW())
+		ON CONFLICT (execution_id, batch_no) DO NOTHING
+	`, batch.ExecutionID, batch.BatchNo, batch.CursorFrom, batch.CursorTo, batch.RowsAffected, status)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(recCtx, `
+		UPDATE executions
+		SET rows_committed = COALESCE((
+			SELECT SUM(rows_affected) FROM execution_batches
+			WHERE execution_id = $1 AND status = 'committed' AND reverted_at IS NULL
+		), 0),
+		updated_at = NOW()
+		WHERE id = $1
+	`, batch.ExecutionID)
+	if err != nil {
+		return err
+	}
+	return tx.Commit(recCtx)
+}
+
+func (s *Store) MarkBatchReverted(ctx context.Context, executionID int64, batchNo int) error {
+	recCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+
+	tx, err := s.pool.Begin(recCtx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(recCtx) }()
+
+	_, err = tx.Exec(recCtx, `
+		UPDATE execution_batches
+		SET status = 'reverted', reverted_at = COALESCE(reverted_at, NOW())
+		WHERE execution_id = $1 AND batch_no = $2
+	`, executionID, batchNo)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(recCtx, `
+		UPDATE executions
+		SET rows_committed = COALESCE((
+			SELECT SUM(rows_affected) FROM execution_batches
+			WHERE execution_id = $1 AND status = 'committed' AND reverted_at IS NULL
+		), 0),
+		updated_at = NOW()
+		WHERE id = $1
+	`, executionID)
+	if err != nil {
+		return err
+	}
+	return tx.Commit(recCtx)
 }
 
 func (s *Store) HasBlockingExecution(ctx context.Context, databaseID int) (bool, string, error) {
@@ -392,9 +530,14 @@ func (s *Store) HasBlockingExecution(ctx context.Context, databaseID int) (bool,
 	return true, status, nil
 }
 
+const executionSelectQuery = `SELECT e.id,e.job_id,e.migration_id,e.revision_id,COALESCE(r.revision_no,1),e.database_id,e.action,e.mode,e.batch_config,e.approval_request_id,e.rollback_of,e.sql_executed,e.status,e.rows_committed,e.error_message,e.requested_by,e.started_at,e.finished_at,e.created_at,e.updated_at,m.title,m.version,u.username
+              FROM executions e
+              JOIN migrations m ON m.id=e.migration_id
+              LEFT JOIN migration_revisions r ON r.id=e.revision_id
+              LEFT JOIN users u ON u.id=e.requested_by`
+
 func (s *Store) GetExecution(ctx context.Context, executionID int64) (*Execution, error) {
-	e, err := s.scanExecution(s.pool.QueryRow(ctx, `SELECT e.id,e.job_id,e.migration_id,e.revision_id,e.database_id,e.action,e.mode,e.batch_config,e.approval_request_id,e.rollback_of,e.sql_executed,e.status,e.rows_committed,e.error_message,e.requested_by,e.started_at,e.finished_at,e.created_at,e.updated_at,m.title,m.version,u.username
-              FROM executions e JOIN migrations m ON m.id=e.migration_id LEFT JOIN users u ON u.id=e.requested_by WHERE e.id=$1`, executionID))
+	e, err := s.scanExecution(s.pool.QueryRow(ctx, executionSelectQuery+` WHERE e.id=$1`, executionID))
 	return e, err
 }
 
@@ -413,10 +556,11 @@ func (s *Store) GetExecutionByJobID(ctx context.Context, jobID string) (*Executi
 			status = ExecFailed
 		}
 		e := &Execution{
-			JobID: jobID, MigrationID: m.ID, DatabaseID: m.DatabaseID,
-			Action: ActionUp, Mode: ModeSingle, SQLExecuted: m.SQL,
+			ExecutionID: int64(m.ID),
+			JobID:       jobID, MigrationID: m.ID, RevisionNo: 1, DatabaseID: m.DatabaseID,
+			Action: ActionUp, Attempt: 1, Mode: ModeSingle, SQLExecuted: m.SQL, ExecutedSQL: m.SQL,
 			Status: status, RowsCommitted: 0, Title: m.Title,
-			CreatedAt: m.CreatedAt,
+			CreatedAt: m.CreatedAt, ExecutedAt: m.FinishTime,
 		}
 		if m.ErrorMessage != nil {
 			e.ErrorMessage = m.ErrorMessage
@@ -424,8 +568,7 @@ func (s *Store) GetExecutionByJobID(ctx context.Context, jobID string) (*Executi
 		e.Batches = []ExecutionBatch{}
 		return e, nil
 	}
-	e, err := s.scanExecution(s.pool.QueryRow(ctx, `SELECT e.id,e.job_id,e.migration_id,e.revision_id,e.database_id,e.action,e.mode,e.batch_config,e.approval_request_id,e.rollback_of,e.sql_executed,e.status,e.rows_committed,e.error_message,e.requested_by,e.started_at,e.finished_at,e.created_at,e.updated_at,m.title,m.version,u.username
-              FROM executions e JOIN migrations m ON m.id=e.migration_id LEFT JOIN users u ON u.id=e.requested_by WHERE e.job_id=$1`, jobID))
+	e, err := s.scanExecution(s.pool.QueryRow(ctx, executionSelectQuery+` WHERE e.job_id=$1`, jobID))
 	return e, err
 }
 
@@ -435,13 +578,16 @@ func (s *Store) scanExecution(row pgx.Row) (*Execution, error) {
 	var approval, rollback, requested, version sql.NullInt64
 	var errorMessage, username sql.NullString
 	var started, finished sql.NullTime
-	err := row.Scan(&e.ID, &e.JobID, &e.MigrationID, &e.RevisionID, &e.DatabaseID, &e.Action, &e.Mode, &cfg, &approval, &rollback, &e.SQLExecuted, &e.Status, &e.RowsCommitted, &errorMessage, &requested, &started, &finished, &e.CreatedAt, &e.UpdatedAt, &e.Title, &version, &username)
+	err := row.Scan(&e.ID, &e.JobID, &e.MigrationID, &e.RevisionID, &e.RevisionNo, &e.DatabaseID, &e.Action, &e.Mode, &cfg, &approval, &rollback, &e.SQLExecuted, &e.Status, &e.RowsCommitted, &errorMessage, &requested, &started, &finished, &e.CreatedAt, &e.UpdatedAt, &e.Title, &version, &username)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, err
 	}
+	e.ExecutionID = e.ID
+	e.Attempt = 1
+	e.ExecutedSQL = e.SQLExecuted
 	e.BatchConfig = decodeBatch(cfg)
 	if approval.Valid {
 		v := approval.Int64
@@ -469,9 +615,15 @@ func (s *Store) scanExecution(row pgx.Row) (*Execution, error) {
 	}
 	if started.Valid {
 		e.StartedAt = &started.Time
+		e.ExecutedAt = &started.Time
 	}
 	if finished.Valid {
 		e.FinishedAt = &finished.Time
+		e.ExecutedAt = &finished.Time
+	}
+	if e.ExecutedAt == nil {
+		created := e.CreatedAt
+		e.ExecutedAt = &created
 	}
 	return &e, nil
 }
@@ -499,8 +651,7 @@ func (s *Store) ListExecutionBatches(ctx context.Context, executionID int64) ([]
 }
 
 func (s *Store) ListExecutionHistory(ctx context.Context, databaseID int, hide bool) ([]Execution, error) {
-	query := `SELECT e.id,e.job_id,e.migration_id,e.revision_id,e.database_id,e.action,e.mode,e.batch_config,e.approval_request_id,e.rollback_of,e.sql_executed,e.status,e.rows_committed,e.error_message,e.requested_by,e.started_at,e.finished_at,e.created_at,e.updated_at,m.title,m.version,u.username
-              FROM executions e JOIN migrations m ON m.id=e.migration_id LEFT JOIN users u ON u.id=e.requested_by WHERE e.database_id=$1`
+	query := executionSelectQuery + ` WHERE e.database_id=$1`
 	args := []any{databaseID}
 	if hide {
 		query += ` AND NOT (e.action='down' AND e.status='success') AND NOT (e.id IN (SELECT rollback_of FROM executions WHERE action='down' AND status='success' AND rollback_of IS NOT NULL))`
@@ -511,18 +662,89 @@ func (s *Store) ListExecutionHistory(ctx context.Context, databaseID int, hide b
 		return nil, err
 	}
 	defer rows.Close()
-	var history []Execution
+	var baseExecutions []Execution
+	execIDs := make([]int64, 0)
 	for rows.Next() {
 		e, err := s.scanExecution(rows)
 		if err != nil {
 			return nil, err
 		}
-		history = append(history, *e)
+		baseExecutions = append(baseExecutions, *e)
+		execIDs = append(execIDs, e.ID)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 	rows.Close()
+
+	attemptsByExec := make(map[int64][]Execution)
+	if len(execIDs) > 0 {
+		attRows, attErr := s.pool.Query(ctx, `
+			SELECT execution_id, attempt_no, status, rows_committed, error_message, sql_executed, started_at, finished_at
+			FROM execution_attempts
+			WHERE execution_id = ANY($1)
+			ORDER BY execution_id DESC, attempt_no DESC
+		`, execIDs)
+		if attErr == nil {
+			for attRows.Next() {
+				var execID int64
+				var attemptNo int
+				var attStatus, attSQL string
+				var rowsCommitted int64
+				var errMsg sql.NullString
+				var startedAt time.Time
+				var finishedAt sql.NullTime
+				if scanErr := attRows.Scan(&execID, &attemptNo, &attStatus, &rowsCommitted, &errMsg, &attSQL, &startedAt, &finishedAt); scanErr == nil {
+					item := Execution{
+						ExecutionID:   execID,
+						Attempt:       attemptNo,
+						Status:        attStatus,
+						RowsCommitted: rowsCommitted,
+						SQLExecuted:   attSQL,
+						ExecutedSQL:   attSQL,
+						StartedAt:     &startedAt,
+						ExecutedAt:    &startedAt,
+					}
+					if errMsg.Valid {
+						v := errMsg.String
+						item.ErrorMessage = &v
+					}
+					if finishedAt.Valid {
+						t := finishedAt.Time
+						item.FinishedAt = &t
+						item.ExecutedAt = &t
+					}
+					attemptsByExec[execID] = append(attemptsByExec[execID], item)
+				}
+			}
+			attRows.Close()
+		}
+	}
+
+	history := make([]Execution, 0, len(baseExecutions))
+	for _, base := range baseExecutions {
+		atts := attemptsByExec[base.ID]
+		if len(atts) <= 1 {
+			if len(atts) == 1 {
+				base.Attempt = atts[0].Attempt
+			}
+			history = append(history, base)
+			continue
+		}
+		for _, att := range atts {
+			entry := base
+			entry.Attempt = att.Attempt
+			entry.Status = att.Status
+			entry.RowsCommitted = att.RowsCommitted
+			entry.ErrorMessage = att.ErrorMessage
+			entry.SQLExecuted = att.SQLExecuted
+			entry.ExecutedSQL = att.ExecutedSQL
+			entry.StartedAt = att.StartedAt
+			entry.FinishedAt = att.FinishedAt
+			entry.ExecutedAt = att.ExecutedAt
+			history = append(history, entry)
+		}
+	}
 
 	legacyRows, err := s.pool.Query(ctx, `SELECT m.id,m.database_id,m.title,m.status,m.sql,m.error_message,m.created_at,m.finish_time,m.executed_by
               FROM migrations m
@@ -541,11 +763,17 @@ func (s *Store) ListExecutionHistory(ctx context.Context, databaseID int, hide b
 		if err := legacyRows.Scan(&e.MigrationID, &e.DatabaseID, &title, &status, &sqlText, &errorMessage, &e.CreatedAt, &finished, &executedBy); err != nil {
 			return nil, err
 		}
+		e.ExecutionID = int64(e.MigrationID)
+		e.RevisionNo = 1
+		e.Attempt = 1
 		e.JobID = fmt.Sprintf("legacy-M%d", e.MigrationID)
 		e.Title = title
 		e.Action = ActionUp
 		e.Mode = ModeSingle
 		e.SQLExecuted = sqlText
+		e.ExecutedSQL = sqlText
+		created := e.CreatedAt
+		e.ExecutedAt = &created
 		if status == StatusFailed {
 			e.Status = ExecFailed
 		} else {
@@ -557,6 +785,7 @@ func (s *Store) ListExecutionHistory(ctx context.Context, databaseID int, hide b
 		}
 		if finished.Valid {
 			e.FinishedAt = &finished.Time
+			e.ExecutedAt = &finished.Time
 		}
 		if executedBy.Valid {
 			v := int(executedBy.Int64)
@@ -620,9 +849,7 @@ func (s *Store) GetActiveMigration(ctx context.Context, databaseID int) (*Migrat
 }
 
 func (s *Store) GetLatestAppliedExecution(ctx context.Context, migrationID int) (*Execution, error) {
-	e, err := s.scanExecution(s.pool.QueryRow(ctx, `SELECT e.id,e.job_id,e.migration_id,e.revision_id,e.database_id,e.action,e.mode,e.batch_config,
-	          e.approval_request_id,e.rollback_of,e.sql_executed,e.status,e.rows_committed,e.error_message,e.requested_by,e.started_at,e.finished_at,e.created_at,e.updated_at,m.title,m.version,u.username
-              FROM executions e JOIN migrations m ON m.id=e.migration_id LEFT JOIN users u ON u.id=e.requested_by
+	e, err := s.scanExecution(s.pool.QueryRow(ctx, executionSelectQuery+`
               WHERE e.migration_id=$1 AND e.action IN ('up','forward') AND e.status='success'
               AND NOT EXISTS (SELECT 1 FROM executions d WHERE d.rollback_of=e.id AND d.action='down' AND d.status='success')
               ORDER BY e.finished_at DESC NULLS LAST,e.id DESC LIMIT 1`, migrationID))
@@ -633,9 +860,7 @@ func (s *Store) GetLatestAppliedExecution(ctx context.Context, migrationID int) 
 }
 
 func (s *Store) GetLatestDownExecution(ctx context.Context, migrationID int) (*Execution, error) {
-	e, err := s.scanExecution(s.pool.QueryRow(ctx, `SELECT e.id,e.job_id,e.migration_id,e.revision_id,e.database_id,e.action,e.mode,e.batch_config,e.approval_request_id,e.rollback_of,e.sql_executed,e.status,
-	          e.rows_committed,e.error_message,e.requested_by,e.started_at,e.finished_at,e.created_at,e.updated_at,m.title,m.version,u.username
-              FROM executions e JOIN migrations m ON m.id=e.migration_id LEFT JOIN users u ON u.id=e.requested_by
+	e, err := s.scanExecution(s.pool.QueryRow(ctx, executionSelectQuery+`
               WHERE e.migration_id=$1 AND e.action='down' AND e.status='success'
               AND NOT EXISTS (SELECT 1 FROM executions f WHERE f.rollback_of=e.id AND f.action='forward' AND f.status='success')
               ORDER BY e.finished_at DESC NULLS LAST,e.id DESC LIMIT 1`, migrationID))

@@ -42,7 +42,11 @@ func (s *Store) CreateDraftWithRevision(ctx context.Context, databaseID int, tit
 	}
 	cfgBytes, _ := json.Marshal(cfg)
 	hash := revisionHash(upSQL, downSQL, irreversible, reason, mode, cfg)
-	r := &Revision{MigrationID: m.ID, RevisionNo: 1, Status: StatusDraft, ContentHash: hash, CreatedBy: createdBy}
+	r := &Revision{
+		MigrationID: m.ID, RevisionNo: 1, UpSQL: upSQL, DownSQL: downSQL,
+		Irreversible: irreversible, IrreversibleReason: reason, Mode: mode, BatchConfig: cfg,
+		Status: StatusDraft, ContentHash: hash, CreatedBy: createdBy,
+	}
 	err = tx.QueryRow(ctx, `INSERT INTO migration_revisions (migration_id, revision_no, up_sql, down_sql, irreversible, irreversible_reason, mode, batch_config, status, content_hash, created_by)
           VALUES ($1,$2,$3,NULLIF($4,''),$5,$6,$7,$8,'draft',$9,$10) RETURNING id, created_at`, 
 		  r.MigrationID, r.RevisionNo, r.UpSQL, r.DownSQL, r.Irreversible, r.IrreversibleReason, r.Mode, cfgBytes, r.ContentHash, r.CreatedBy).Scan(&r.ID, &r.CreatedAt)
