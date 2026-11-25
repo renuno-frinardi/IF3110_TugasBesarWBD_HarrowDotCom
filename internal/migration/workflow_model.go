@@ -25,6 +25,7 @@ const (
 	ActionDown    = "down"
 	ActionForward = "forward"
 	ModeSingle    = "single"
+	ModeNormal    = "normal"
 	ModeBatch     = "batch"
 
 	ExecPending           = "pending"
@@ -128,22 +129,27 @@ type ExecutionBatch struct {
 
 type Execution struct {
 	ID                int64            `json:"id"`
+	ExecutionID       int64            `json:"execution_id"`
 	JobID             string           `json:"job_id"`
 	MigrationID       int              `json:"migration_id"`
 	RevisionID        int64            `json:"revision_id"`
+	RevisionNo        int              `json:"revision"`
 	DatabaseID        int              `json:"database_id"`
 	Action            string           `json:"action"`
+	Attempt           int              `json:"attempt"`
 	Mode              string           `json:"mode"`
 	BatchConfig       BatchConfig      `json:"batch_config"`
 	ApprovalRequestID *int64           `json:"approval_request_id,omitempty"`
 	RollbackOf        *int64           `json:"rollback_of,omitempty"`
 	SQLExecuted       string           `json:"sql_executed"`
+	ExecutedSQL       string           `json:"executed_sql"`
 	Status            string           `json:"status"`
 	RowsCommitted     int64            `json:"rows_committed"`
 	ErrorMessage      *string          `json:"error_message,omitempty"`
 	RequestedBy       *int             `json:"requested_by,omitempty"`
 	StartedAt         *time.Time       `json:"started_at,omitempty"`
 	FinishedAt        *time.Time       `json:"finished_at,omitempty"`
+	ExecutedAt        *time.Time       `json:"executed_at,omitempty"`
 	CreatedAt         time.Time        `json:"created_at"`
 	UpdatedAt         time.Time        `json:"updated_at"`
 	Title             string           `json:"title"`
@@ -153,13 +159,18 @@ type Execution struct {
 }
 
 type ExecutionResult struct {
-	JobID         string
-	ExecutionID   int64
-	Status        string
-	RowsCommitted int64
-	ErrorMessage  string
-	StartedAt     *time.Time
-	FinishedAt    *time.Time
+	JobID          string
+	ExecutionID    int64
+	Attempt        int
+	JobKind        string
+	WorkerID       string
+	Status         string
+	RowsCommitted  int64
+	ErrorMessage   string
+	StartedAt      *time.Time
+	FinishedAt     *time.Time
+	RetryScheduled bool
+	AllowReopen    bool
 }
 
 type BatchResult struct {
@@ -178,9 +189,13 @@ type JobMessage struct {
 	DatabaseID   int
 	MigrationID  int
 	RevisionID   int64
+	RevisionNo   int
 	Action       string
 	Mode         string
 	BatchConfig  BatchConfig
 	SQL          string
+	DownSQL      string
+	Irreversible bool
+	RequestedBy  int
 	TraceContext string
 }

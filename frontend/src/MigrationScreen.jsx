@@ -258,7 +258,7 @@ function Job({ id, initial, run, expire }) {
       <dt>Row committed</dt><dd>{job.committed_rows ?? 0}</dd>
       <dt>Cursor terakhir</dt><dd>{job.checkpoint?.cursor ?? "—"}</dd>
     </dl>
-    {job.error && <p role="alert">{job.error}</p>}
+    {(job.error_message || job.error) && <p role="alert">{job.error_message || job.error}</p>}
     {pollError && <p role="alert">{pollError}{" "}
       <Action onClick={() => setRetry(n => n + 1)}>Coba pantau lagi</Action>
     </p>}

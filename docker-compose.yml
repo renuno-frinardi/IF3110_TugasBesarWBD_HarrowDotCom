@@ -16,6 +16,61 @@ services:
       timeout: 5s
       retries: 10
 
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["harrow-server"]
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: "8080"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-harrow_db}
+      POSTGRES_USER: ${POSTGRES_USER:-harrow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Set ENCRYPTION_KEY in .env}
+      WORKER_MAX_RETRIES: ${WORKER_MAX_RETRIES:-3}
+      OTEL_EXPORTER: ${OTEL_EXPORTER:-stdout}
+    ports:
+      - "${APP_PORT:-8080}:8080"
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["harrow-worker"]
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-harrow_db}
+      POSTGRES_USER: ${POSTGRES_USER:-harrow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Set ENCRYPTION_KEY in .env}
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-4}
+      WORKER_POLL_INTERVAL_MS: ${WORKER_POLL_INTERVAL_MS:-500}
+      WORKER_LEASE_TTL_SECONDS: ${WORKER_LEASE_TTL_SECONDS:-15}
+      WORKER_MAX_RETRIES: ${WORKER_MAX_RETRIES:-3}
+      WORKER_RETRY_BASE_MS: ${WORKER_RETRY_BASE_MS:-500}
+      OTEL_EXPORTER: ${OTEL_EXPORTER:-stdout}
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - server
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+
   mariadb:
     image: mariadb:11
     profiles: ["mariadb"]
