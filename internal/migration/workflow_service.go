@@ -92,6 +92,9 @@ func (s *Service) Submit(ctx context.Context, userID, migrationID int, downSQL s
 	if err := validateBatchSQL(mode, r.UpSQL, downSQL); err != nil {
 		return nil, err
 	}
+	if err := validateWorkflowSQL(mode, r.UpSQL, downSQL, cfg); err != nil {
+		return nil, err
+	}
 	r, err = s.store.UpdateDraftRevision(ctx, migrationID, m.Title, r.UpSQL, downSQL, irreversible, reason, mode, cfg, userID)
 	if err != nil {
 		return nil, err
