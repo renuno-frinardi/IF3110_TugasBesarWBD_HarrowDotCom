@@ -76,7 +76,7 @@ export function MigrationScreen({ path, params, data, run, expire }) {
 
       if (action === "execute") return destination("/jobs", { id: result.job_id });
       if (action === "rollback" || action === "forward") {
-        return destination("/migration", { id: result.id });
+        return destination("/migration", { id });
       }
       return {};
     });
