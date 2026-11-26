@@ -22,9 +22,9 @@ export function Field({ name, label = name, choices, ...props }) {
   );
 }
 
-export function Form({ title, onSave, button = "Simpan", children }) {
+export function Form({ className, title, onSave, button = "Simpan", children }) {
   return (
-    <form onSubmit={event => {
+    <form className={className} onSubmit={event => {
       event.preventDefault();
       const body = Object.fromEntries(new FormData(event.currentTarget));
       onSave(body, event.nativeEvent.submitter?.value);

@@ -67,3 +67,119 @@ td form, td details { min-width: 11rem; }
   h1 { font-size: 1.45rem; overflow-wrap: anywhere; }
   .actions { align-items: stretch; }
 }
+
+header, main {
+  padding-inline: clamp(.75rem, 3vw, 2rem);
+}
+
+header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+}
+
+.menu-toggle {
+  display: none;
+}
+
+.screen, form, section, nav, dd {
+  overflow-wrap: anywhere;
+}
+
+form {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+button, summary, nav a, .actions a {
+  min-height: 2.75rem;
+}
+
+nav a, .actions a {
+  display: inline-flex;
+  align-items: center;
+}
+
+summary {
+  cursor: pointer;
+}
+
+pre {
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+
+.table-scroll {
+  overscroll-behavior-x: contain;
+}
+
+th, td {
+  min-width: 7rem;
+}
+
+th {
+  vertical-align: top;
+}
+
+td pre {
+  max-width: min(55ch, 65vw);
+}
+
+dd {
+  margin-inline-start: 1rem;
+}
+
+@media (min-width: 42rem) {
+  .connection-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: end;
+  }
+
+  .connection-form > label:first-child {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Navigasi buat tablet, HP */
+@media (max-width: 56rem) {
+  .menu-toggle {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  #main-nav {
+    display: none;
+    flex-basis: 100%;
+  }
+
+  #main-nav[data-open="true"] {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
+    gap: .4rem;
+  }
+
+  #main-nav a, #main-nav button {
+    padding: .55rem .7rem;
+  }
+}
+
+/* Tombol aksi mudah dijangkau di HP */
+@media (max-width: 36rem) {
+  .actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: .4rem;
+  }
+
+  .actions > *, form > button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  section form, td form {
+    padding: .6rem;
+  }
+}

@@ -148,7 +148,7 @@ function Draft({ db, migration: m, run }) {
 
       const payload = {
         name: values.name.trim(),
-        sql_up: values.sql_up,
+        up_sql: values.sql_up,
         sql_down: irreversible ? null : values.sql_down,
         irreversible,
         irreversible_reason: irreversible ? values.irreversible_reason.trim() : null,

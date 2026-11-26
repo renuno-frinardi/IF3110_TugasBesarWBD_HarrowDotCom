@@ -74,7 +74,7 @@ export function Workspace({ path, params, data: d, session, run, post }) {
     const editing = path.endsWith("/edit");
     return <>
       <h1>{editing ? "Edit koneksi" : "Tambah koneksi PostgreSQL"}</h1>
-      <Form onSave={(values, action) => {
+      <Form className="connection-form" onSave={(values, action) => {
         const body = { ...values, db_type: "postgresql" };
         if (action === "test") {
           run(async () => {
