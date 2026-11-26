@@ -59,24 +59,50 @@ export function Workspace({ path, params, data: d, session, run, post }) {
 
   if (path === "/connections/view") {
     return <>
-      <h1>{c.Name}</h1>
-      <p>{c.DBType} · {c.Host}:{c.Port} · {c.DatabaseName}</p>
-      <p>User: {c.Username} · SSL: {c.SSLMode} · {c.IsActive ? "Aktif" : "Nonaktif"}</p>
-      <div className="actions">
-        {c.IsActive && <>
-          <a className="button-link" href={dbLink("/connections/explore", id)}>Explorer</a>
-          <a className="button-link" href={link("/migrations", { db: id })}>Migrations</a>
-        </>}
-        {admin && <>
-          <a className="button-link" href={dbLink("/connections/edit", id)}>Edit koneksi</a>
-          <Action onClick={() => post("/connections/toggle-active",
-            { ...connection, is_active: String(!c.IsActive) })}>
-            {c.IsActive ? "Nonaktifkan" : "Aktifkan"}
-          </Action>
-          <Action confirmText={`Hapus koneksi ${c.Name}?`}
-            onClick={() => post("/connections/delete", connection)}>Hapus</Action>
-        </>}
-      </div>
+      <section className="connection-detail">
+        <div className="connection-detail-heading">
+          <div>
+            <p className="connection-eyebrow">Koneksi database</p>
+            <div className="connection-title-row">
+              <h1>{c.Name}</h1>
+              <span className="connection-type">
+                {c.DBType === "postgresql" ? "PostgreSQL" : c.DBType}
+              </span>
+            </div>
+          </div>
+          <span className={`connection-status ${c.IsActive
+            ? "connection-status--active" : "connection-status--inactive"}`}>
+            <span aria-hidden="true" />
+            {c.IsActive ? "Aktif" : "Nonaktif"}
+          </span>
+        </div>
+
+        <dl className="connection-metadata">
+          <div><dt>Database</dt><dd>{c.DatabaseName}</dd></div>
+          <div><dt>Host dan port</dt><dd>{c.Host}:{c.Port}</dd></div>
+          <div><dt>User</dt><dd>{c.Username}</dd></div>
+          <div><dt>SSL mode</dt><dd>{c.SSLMode}</dd></div>
+        </dl>
+
+        <div className="connection-actions">
+          <div className="connection-action-group">
+            {c.IsActive && <>
+              <a className="button-link" href={dbLink("/connections/explore", id)}>Explorer</a>
+              <a className="button-link" href={link("/migrations", { db: id })}>Migrations</a>
+            </>}
+          </div>
+          {admin && <div className="connection-action-group connection-admin-actions">
+            <a className="button-link button-link--secondary"
+              href={dbLink("/connections/edit", id)}>Edit koneksi</a>
+            <Action className="secondary-button" onClick={() => post("/connections/toggle-active",
+              { ...connection, is_active: String(!c.IsActive) })}>
+              {c.IsActive ? "Nonaktifkan" : "Aktifkan"}
+            </Action>
+            <Action className="danger-solid" confirmText={`Hapus koneksi ${c.Name}?`}
+              onClick={() => post("/connections/delete", connection)}>Hapus koneksi</Action>
+          </div>}
+        </div>
+      </section>
     </>;
   }
 
