@@ -26,7 +26,8 @@ export function MigrationScreen({ path, params, data, run, expire }) {
     const hide = params.get("hide") === "1";
     return <>
       <h1>Migration history</h1>
-      <a className="button-link" href={link("/migrations", { db })}>Kembali ke migrations</a>
+      <a className="button-link history-back"
+        href={link("/migrations", { db })}>Kembali ke migrations</a>
       <label className="check">
         <input type="checkbox" checked={hide} onChange={e => {
           window.location.hash = link("/history",

@@ -326,6 +326,72 @@ main:has(.action-dropdown[data-needs-room]:popover-open)::after {
 }
 .connection-action-group { gap: .6rem; }
 
+.explorer-page-heading, .explorer-selector-heading, .explorer-table-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: .75rem 1rem;
+}
+.explorer-page-heading { margin-block: 1.25rem; }
+.explorer-page-heading h1, .explorer-selector-heading h2, .explorer-table-heading h2 {
+  margin: 0;
+}
+.explorer-page-heading > div > p:last-child,
+.explorer-selector-heading p {
+  margin: .25rem 0 0;
+  color: #52676c;
+}
+.explorer-selector {
+  padding: 1rem;
+  border-color: #d3e0dc;
+  border-radius: .65rem;
+}
+.explorer-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .55rem;
+  margin-top: 1rem;
+}
+.explorer-option {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  min-height: 2.5rem;
+  max-width: 100%;
+  padding: .45rem .7rem;
+  overflow-wrap: anywhere;
+  border: 1px solid #cad7d4;
+  border-radius: .45rem;
+  background: white;
+  color: #075c58;
+  text-decoration: none;
+}
+.explorer-option:hover {
+  border-color: #75a393;
+  background: #f4f8f6;
+}
+.explorer-option.is-selected {
+  border-color: #75a393;
+  background: #e4f1eb;
+  color: #075c43;
+  font-weight: 650;
+}
+.explorer-table-heading {
+  margin-block: 1.5rem .75rem;
+  padding-bottom: .75rem;
+  border-bottom: 1px solid #d6e1de;
+}
+.explorer-pagination { gap: .75rem; }
+.pagination-arrow {
+  width: 2.75rem;
+  min-width: 2.75rem;
+  padding-inline: .5rem;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+.history-back { margin-block: .5rem .75rem; }
+
 [role="alert"] { color: #96251e; overflow-wrap: anywhere; }
 [role="status"] { overflow-wrap: anywhere; }
 .job-id { color: #4a6269; font-size: .875rem; }
@@ -488,6 +554,7 @@ dd {
   .connection-detail-heading, .connection-actions { align-items: flex-start; }
   .connection-actions, .connection-action-group { width: 100%; }
   .connection-admin-actions { padding-top: .75rem; border-top: 1px solid #e1e9e6; }
+  .explorer-selector { padding: .75rem; }
 }
 
 @media (min-width: 47rem) and (max-width: 56rem) {

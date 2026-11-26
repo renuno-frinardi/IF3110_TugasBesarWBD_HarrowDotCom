@@ -378,18 +378,75 @@ function Explorer({ d, id, post, run }) {
   }
 
   return <>
-    <h1>Explorer · {d.connection.Name}</h1>
+    <div className="explorer-page-heading">
+      <div>
+        <p className="connection-eyebrow">Database Explorer</p>
+        <h1>{d.connection.Name}</h1>
+        <p>Pilih schema dan tabel untuk melihat atau mengelola datanya.</p>
+      </div>
+      <a className="button-link button-link--secondary"
+        href={dbLink("/connections/view", id)}>Detail koneksi</a>
+    </div>
     {d.success && !insertError && <p role="status">{d.success}</p>}
-    <nav>{(e.Schemas || []).map(schema => (
-      <a key={schema} href={dbLink("/connections/explore", id, { schema })}>{schema}</a>
-    ))}</nav>
-    <nav>{(e.Tables || []).map(table => (
-      <a key={table} href={dbLink("/connections/explore", id,
-        { schema: e.SelectedSchema, table })}>{table}</a>
-    ))}</nav>
+    <section className="explorer-selector">
+      <div className="explorer-selector-heading">
+        <div>
+          <h2>1. Pilih schema</h2>
+          <p>Schema mengelompokkan tabel dalam database.</p>
+        </div>
+        <span className="access-count">{(e.Schemas || []).length} schema</span>
+      </div>
+      {(e.Schemas || []).length ? (
+        <nav className="explorer-options" aria-label="Schema database">
+          {(e.Schemas || []).map(schema => {
+            const selected = schema === e.SelectedSchema;
+            return (
+              <a key={schema}
+                className={`explorer-option${selected ? " is-selected" : ""}`}
+                href={dbLink("/connections/explore", id, { schema })}
+                aria-current={selected ? "page" : undefined}>
+                <span>{schema}</span>
+              </a>
+            );
+          })}
+        </nav>
+      ) : <p className="access-empty">Tidak ada schema yang dapat ditampilkan.</p>}
+    </section>
+
+    {e.SelectedSchema && <section className="explorer-selector">
+      <div className="explorer-selector-heading">
+        <div>
+          <h2>2. Pilih tabel</h2>
+          <p>Schema aktif: <strong>{e.SelectedSchema}</strong></p>
+        </div>
+        <span className="access-count">{(e.Tables || []).length} tabel</span>
+      </div>
+      {(e.Tables || []).length ? (
+        <nav className="explorer-options" aria-label={`Tabel pada schema ${e.SelectedSchema}`}>
+          {(e.Tables || []).map(table => {
+            const selected = table === e.SelectedTable;
+            return (
+              <a key={table}
+                className={`explorer-option${selected ? " is-selected" : ""}`}
+                href={dbLink("/connections/explore", id,
+                  { schema: e.SelectedSchema, table })}
+                aria-current={selected ? "page" : undefined}>
+                <span>{table}</span>
+              </a>
+            );
+          })}
+        </nav>
+      ) : <p className="access-empty">Belum ada tabel pada schema ini.</p>}
+    </section>}
 
     {e.SelectedTable && <>
-      <h2>{e.SelectedSchema}.{e.SelectedTable}</h2>
+      <div className="explorer-table-heading">
+        <div>
+          <p className="connection-eyebrow">Tabel terpilih</p>
+          <h2>{e.SelectedSchema}.{e.SelectedTable}</h2>
+        </div>
+        <span className="access-count">Halaman {e.Page}</span>
+      </div>
       {["Constraints", "Indexes"].map(key => <section key={key}>
         <h3>{key}</h3>
         <Table rows={e[key]} columns={[
@@ -418,12 +475,18 @@ function Explorer({ d, id, post, run }) {
           </ActionDropdown>
         )]] : []),
       ]} />
-      <nav>
-        {e.Page > 1 && <a className="button-link" href={link("/connections/explore",
-          { ...scope, page: e.Page - 1 })}>Sebelumnya</a>}
+      <nav className="explorer-pagination" aria-label="Navigasi halaman tabel">
+        {e.Page > 1 && <a className="button-link pagination-arrow"
+          aria-label="Halaman sebelumnya" title="Halaman sebelumnya"
+          href={link("/connections/explore", { ...scope, page: e.Page - 1 })}>
+          <span aria-hidden="true">←</span>
+        </a>}
         <span>Halaman {e.Page}</span>
-        {e.HasNextPage && <a className="button-link" href={link("/connections/explore",
-          { ...scope, page: e.Page + 1 })}>Berikutnya</a>}
+        {e.HasNextPage && <a className="button-link pagination-arrow"
+          aria-label="Halaman berikutnya" title="Halaman berikutnya"
+          href={link("/connections/explore", { ...scope, page: e.Page + 1 })}>
+          <span aria-hidden="true">→</span>
+        </a>}
       </nav>
     </>}
   </>;
