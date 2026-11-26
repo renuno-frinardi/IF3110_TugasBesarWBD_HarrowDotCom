@@ -457,7 +457,6 @@ header :focus-visible { outline-color: #ffdb9b; }
 }
 #main-nav a[aria-current="page"] {
   background: #ffffff24;
-  box-shadow: inset 0 -2px #d5eee1, 0 0 0 1px #ffffff18;
   backdrop-filter: blur(8px);
 }
 
