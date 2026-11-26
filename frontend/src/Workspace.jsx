@@ -27,7 +27,9 @@ export function Workspace({ path, params, data: d, session, run, post }) {
         Koneksi yang dapat diakses: {d.stats?.Connections}.
         {admin && ` Users: ${d.stats?.Users}. Groups: ${d.stats?.Groups}.`}
       </p>}
-      {admin && <a href={link("/connections/new")}>Tambah koneksi</a>}
+      {admin && <div className="actions">
+        <a className="button-link" href={link("/connections/new")}>Tambah koneksi</a>
+      </div>}
       {!dashboard && (
         <Form button="Terapkan filter" onSave={values => {
           window.location.hash = link("/connections", values).slice(1);
@@ -43,7 +45,9 @@ export function Workspace({ path, params, data: d, session, run, post }) {
         ["Database", "DatabaseName"], ["Host", "Host"], ["Port", "Port"],
         ["Status", row => row.IsActive ? "Aktif" : "Nonaktif"],
       ]} />
-      {dashboard && <a href={link("/connections")}>Lihat semua koneksi</a>}
+      {dashboard && <div className="actions">
+        <a className="button-link" href={link("/connections")}>Lihat semua koneksi</a>
+      </div>}
     </>;
   }
 
@@ -54,11 +58,11 @@ export function Workspace({ path, params, data: d, session, run, post }) {
       <p>User: {c.Username} · SSL: {c.SSLMode} · {c.IsActive ? "Aktif" : "Nonaktif"}</p>
       <div className="actions">
         {c.IsActive && <>
-          <a href={dbLink("/connections/explore", id)}>Explorer</a>
-          <a href={link("/migrations", { db: id })}>Migrations</a>
+          <a className="button-link" href={dbLink("/connections/explore", id)}>Explorer</a>
+          <a className="button-link" href={link("/migrations", { db: id })}>Migrations</a>
         </>}
         {admin && <>
-          <a href={dbLink("/connections/edit", id)}>Edit koneksi</a>
+          <a className="button-link" href={dbLink("/connections/edit", id)}>Edit koneksi</a>
           <Action onClick={() => post("/connections/toggle-active",
             { ...connection, is_active: String(!c.IsActive) })}>
             {c.IsActive ? "Nonaktifkan" : "Aktifkan"}
@@ -349,10 +353,10 @@ function Explorer({ d, id, post, run }) {
         )]] : []),
       ]} />
       <nav>
-        {e.Page > 1 && <a href={link("/connections/explore",
+        {e.Page > 1 && <a className="button-link" href={link("/connections/explore",
           { ...scope, page: e.Page - 1 })}>Sebelumnya</a>}
         <span>Halaman {e.Page}</span>
-        {e.HasNextPage && <a href={link("/connections/explore",
+        {e.HasNextPage && <a className="button-link" href={link("/connections/explore",
           { ...scope, page: e.Page + 1 })}>Berikutnya</a>}
       </nav>
     </>}

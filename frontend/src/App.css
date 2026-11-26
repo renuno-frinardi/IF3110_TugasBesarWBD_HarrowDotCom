@@ -70,6 +70,25 @@ button {
 }
 button:disabled { opacity: .6; }
 
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+  min-height: 2.6rem;
+  padding: .45rem .85rem;
+  border: 1px solid #176660;
+  border-radius: .35rem;
+  background: #12645e;
+  color: white;
+  text-decoration: none;
+}
+
+.button-link:hover {
+  background: #075c58;
+  text-decoration: none;
+}
+
 @media (hover: hover) and (pointer: fine) {
   button:not(:disabled):hover {
     transform: translateY(-2px) scale(1.04);

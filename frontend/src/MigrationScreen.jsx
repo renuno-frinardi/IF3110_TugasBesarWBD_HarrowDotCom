@@ -26,7 +26,7 @@ export function MigrationScreen({ path, params, data, run, expire }) {
     const hide = params.get("hide") === "1";
     return <>
       <h1>Migration history</h1>
-      <a href={link("/migrations", { db })}>Kembali ke migrations</a>
+      <a className="button-link" href={link("/migrations", { db })}>Kembali ke migrations</a>
       <label className="check">
         <input type="checkbox" checked={hide} onChange={e => {
           window.location.hash = link("/history",
@@ -51,8 +51,8 @@ export function MigrationScreen({ path, params, data, run, expire }) {
     return <>
       <h1>{reviews ? "Menunggu review saya" : "Migrations"}</h1>
       {!reviews && <nav>
-        <a href={link("/history", { db })}>Migration history</a>
-        {data.can_create && <a href={link("/migration/new", { db })}>Buat migration</a>}
+        <a className="button-link" href={link("/history", { db })}>Migration history</a>
+        {data.can_create && <a className="button-link" href={link("/migration/new", { db })}>Buat migration</a>}
       </nav>}
       <Table rows={data.items} columns={[
         ["Nama", row => <a href={link("/migration", { id: row.id })}>{row.name}</a>],
@@ -84,8 +84,8 @@ export function MigrationScreen({ path, params, data, run, expire }) {
 
   return <>
     <nav>
-      <a href={link("/migrations", { db })}>Daftar migration</a>
-      <a href={link("/history", { db })}>History</a>
+      <a className="button-link" href={link("/migrations", { db })}>Daftar migration</a>
+      <a className="button-link" href={link("/history", { db })}>History</a>
     </nav>
     <h1>{data.name}</h1>
     <p>Revisi {data.revision} · {data.action} · {data.workflow} · {data.mode}</p>
@@ -121,7 +121,7 @@ export function MigrationScreen({ path, params, data, run, expire }) {
           </Action>
         ))}
       {data.latest_job_id &&
-        <a href={link("/jobs", { id: data.latest_job_id })}>Pantau job terakhir</a>}
+        <a className="button-link" href={link("/jobs", { id: data.latest_job_id })}>Pantau job terakhir</a>}
     </div>
   </>;
 }
@@ -275,8 +275,8 @@ function Job({ id, initial, run, expire }) {
       )}
     </div>
     <nav>
-      <a href={link("/migration", { id: job.migration_id })}>Detail migration</a>
-      <a href={link("/history", { db: job.database_id })}>Lihat history</a>
+      <a className="button-link" href={link("/migration", { id: job.migration_id })}>Detail migration</a>
+      <a className="button-link" href={link("/history", { db: job.database_id })}>Lihat history</a>
     </nav>
   </>;
 }
