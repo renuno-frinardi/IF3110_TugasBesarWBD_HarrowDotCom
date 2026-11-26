@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "./api";
 import { Action, Field, Form, Table, link } from "./ui";
 
@@ -39,7 +39,7 @@ export function MigrationScreen({ path, params, data, run, expire }) {
         ["Revisi", "revision"], ["Aksi", "action"], ["Attempt", "attempt"],
         ["Status", "status"], ["User", "requested_by"], ["Waktu", "executed_at"],
         ["Membatalkan execution", "rollback_of"],
-        ["SQL yang dijalankan", row => <pre>{row.executed_sql}</pre>],
+        ["SQL yang dijalankan", row => <pre tabIndex={0}>{row.executed_sql}</pre>],
         ["Job", row => row.job_id &&
           <a href={link("/jobs", { id: row.job_id })}>{row.job_id}</a>],
       ]} />
@@ -94,16 +94,16 @@ export function MigrationScreen({ path, params, data, run, expire }) {
       <Draft db={db} migration={data} run={run} />
     ) : (
       <section>
-        <h3>SQL up</h3><pre>{data.sql_up}</pre>
+        <h3>SQL up</h3><pre tabIndex={0}>{data.sql_up}</pre>
         <h3>{data.irreversible ? "Alasan irreversible" : "SQL down"}</h3>
-        <pre>{data.irreversible ? data.irreversible_reason : data.sql_down}</pre>
+        <pre tabIndex={0}>{data.irreversible ? data.irreversible_reason : data.sql_down}</pre>
       </section>
     )}
 
     <h2>Revisi</h2>
     <Table rows={data.revisions} columns={[
-      ["Revisi", "revision"], ["SQL up", r => <pre>{r.sql_up}</pre>],
-      ["SQL down", r => <pre>{r.sql_down || r.irreversible_reason}</pre>],
+      ["Revisi", "revision"], ["SQL up", r => <pre tabIndex={0}>{r.sql_up}</pre>],
+      ["SQL down", r => <pre tabIndex={0}>{r.sql_down || r.irreversible_reason}</pre>],
     ]} />
 
     <h2>Approval per group</h2>
@@ -148,7 +148,7 @@ function Draft({ db, migration: m, run }) {
 
       const payload = {
         name: values.name.trim(),
-        sql_up: values.sql_up,
+        up_sql: values.sql_up,
         sql_down: irreversible ? null : values.sql_down,
         irreversible,
         irreversible_reason: irreversible ? values.irreversible_reason.trim() : null,
@@ -172,7 +172,8 @@ function Draft({ db, migration: m, run }) {
     <Form title={m ? "Edit draft" : "Buat migration"} onSave={save} button="Simpan draft">
       <Field name="name" label="Nama migration" defaultValue={m?.name} required />
       <label>SQL up
-        <textarea name="sql_up" defaultValue={m?.sql_up} required spellCheck="false" />
+        <textarea className="sql-editor" name="sql_up" defaultValue={m?.sql_up}
+          required spellCheck="false" />
       </label>
       <label className="check">
         <input type="checkbox" checked={irreversible}
@@ -184,7 +185,8 @@ function Draft({ db, migration: m, run }) {
           defaultValue={m?.irreversible_reason} required />
       ) : (
         <label>SQL down
-          <textarea name="sql_down" defaultValue={m?.sql_down} required spellCheck="false" />
+          <textarea className="sql-editor" name="sql_down" defaultValue={m?.sql_down}
+            required spellCheck="false" />
         </label>
       )}
       <Field name="mode" label="Mode eksekusi" value={mode}
@@ -201,7 +203,7 @@ function Draft({ db, migration: m, run }) {
         <button type="submit" value="analyze" formNoValidate>EXPLAIN ANALYZE SQL up</button>
       </div>
     </Form>
-    {plan && <section><h3>Query plan</h3><pre>{plan}</pre></section>}
+    {plan && <section><h3>Query plan</h3><pre tabIndex={0}>{plan}</pre></section>}
   </>;
 }
 
@@ -239,7 +241,7 @@ function Job({ id, initial, run, expire }) {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [id, active, retry]);
+  }, [id, active, retry, expire]);
 
   function recover(action) {
     run(async () => {
@@ -251,24 +253,27 @@ function Job({ id, initial, run, expire }) {
   }
 
   return <>
-    <h1>Job {id}</h1>
+    <h1>Detail job</h1>
+    <p className="job-id">ID job <code>{id}</code></p>
     <p role="status">Status: <strong>{job.status}</strong></p>
-    <dl>
+    {job.mode === "batch" && <dl>
       <dt>Batch committed</dt><dd>{job.committed_batches ?? 0}</dd>
       <dt>Row committed</dt><dd>{job.committed_rows ?? 0}</dd>
       <dt>Cursor terakhir</dt><dd>{job.checkpoint?.cursor ?? "—"}</dd>
-    </dl>
+    </dl>}
     {(job.error_message || job.error) && <p role="alert">{job.error_message || job.error}</p>}
     {pollError && <p role="alert">{pollError}{" "}
       <Action onClick={() => setRetry(n => n + 1)}>Coba pantau lagi</Action>
     </p>}
-    {job.allowed_actions?.includes("resume") && (
-      <Action onClick={() => recover("resume")}>Lanjutkan dari checkpoint</Action>
-    )}
-    {job.allowed_actions?.includes("cancel-batches") && (
-      <Action confirmText="Ajukan pembatalan batch yang sudah committed?"
-        onClick={() => recover("cancel-batches")}>Batalkan batch committed</Action>
-    )}
+    <div className="actions">
+      {job.allowed_actions?.includes("resume") && (
+        <Action onClick={() => recover("resume")}>Lanjutkan dari checkpoint</Action>
+      )}
+      {job.allowed_actions?.includes("cancel-batches") && (
+        <Action confirmText="Ajukan pembatalan batch yang sudah committed?"
+          onClick={() => recover("cancel-batches")}>Batalkan batch committed</Action>
+      )}
+    </div>
     <nav>
       <a href={link("/migration", { id: job.migration_id })}>Detail migration</a>
       <a href={link("/history", { db: job.database_id })}>Lihat history</a>

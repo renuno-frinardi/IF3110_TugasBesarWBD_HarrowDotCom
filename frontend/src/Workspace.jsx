@@ -1,4 +1,4 @@
-import React from "react";
+import { useId, useRef, useState } from "react";
 import { api } from "./api";
 import { Action, Field, Form, Table, link } from "./ui";
 
@@ -22,7 +22,7 @@ export function Workspace({ path, params, data: d, session, run, post }) {
   if (path === "/" || path === "/connections") {
     const dashboard = path === "/";
     return <>
-      <h1>{dashboard ? "Dashboard" : "Koneksi PostgreSQL"}</h1>
+      <h1>{dashboard ? <span>Dashboard - Welcome, {session.username}</span> : "Koneksi PostgreSQL"}</h1>
       {dashboard && <p>
         Koneksi yang dapat diakses: {d.stats?.Connections}.
         {admin && ` Users: ${d.stats?.Users}. Groups: ${d.stats?.Groups}.`}
@@ -74,7 +74,7 @@ export function Workspace({ path, params, data: d, session, run, post }) {
     const editing = path.endsWith("/edit");
     return <>
       <h1>{editing ? "Edit koneksi" : "Tambah koneksi PostgreSQL"}</h1>
-      <Form onSave={(values, action) => {
+      <Form className="connection-form" onSave={(values, action) => {
         const body = { ...values, db_type: "postgresql" };
         if (action === "test") {
           run(async () => {
@@ -101,7 +101,7 @@ export function Workspace({ path, params, data: d, session, run, post }) {
   }
 
   if (path === "/connections/explore") {
-    return <Explorer {...{ d, id, post }} />;
+    return <Explorer {...{ d, id, post, run }} />;
   }
 
   if (path === "/users") {
@@ -119,22 +119,7 @@ export function Workspace({ path, params, data: d, session, run, post }) {
         ["Groups", u => u.Groups?.join(", ") || "—"],
         ["Status", u => u.IsActive ? "Aktif" : "Nonaktif"],
         ["Role", u => u.IsAdmin ? "Admin" : "User"],
-        ["Aksi", u => <>
-          <Action onClick={() => post("/users/toggle-active",
-            { user_id: u.ID, is_active: String(!u.IsActive) })}>
-            {u.IsActive ? "Nonaktifkan" : "Aktifkan"}
-          </Action>
-          <Action confirmText={`Ubah role ${u.Username}?`}
-            onClick={() => post("/users/toggle-admin",
-              { user_id: u.ID, is_admin: String(!u.IsAdmin) })}>
-            {u.IsAdmin ? "Cabut admin" : "Jadikan admin"}
-          </Action>
-          <Form button="Reset password"
-            onSave={v => post("/users/reset-password", { ...v, user_id: u.ID })}>
-            <Field name="new_password" label="Password baru"
-              type="password" minLength="8" required />
-          </Form>
-        </>],
+        ["Aksi", user => <UserActions user={user} post={post} />],
       ]} />
     </>;
   }
@@ -160,11 +145,16 @@ export function Workspace({ path, params, data: d, session, run, post }) {
               "Username"
             )} />
           </Form>
-          <ul>{(g.Members || []).map(m => (
-            <li key={m.UserID}>{m.Username}{" "}
-              {g.LeaderID === m.UserID && <strong>Leader </strong>}
-              <Action onClick={() => post("/groups/members/remove",
-                { group_id: g.ID, user_id: m.UserID })}>Keluarkan</Action>
+          <ul className="group-members">{(g.Members || []).map(m => (
+            <li key={m.UserID}>
+              <span>{m.Username}{" "}
+                {g.LeaderUserID === m.UserID && <strong>Leader</strong>}
+              </span>
+              <button type="button" className="remove-member"
+                aria-label={`Keluarkan ${m.Username}`}
+                onClick={() => post("/groups/members/remove", { group_id: g.ID, user_id: m.UserID })}>
+                Keluarkan
+              </button>
             </li>
           ))}</ul>
           {!!g.Members?.length && (
@@ -172,8 +162,9 @@ export function Workspace({ path, params, data: d, session, run, post }) {
               api(`/v2/groups/${g.ID}/leader`, {
                 method: "PUT", json: { user_id: Number(v.user_id) },
               }))}>
-              <Field name="user_id" label="Leader" defaultValue={g.LeaderID || ""}
-                choices={g.Members.map(m => [m.UserID, m.Username])} required />
+              <Field name="user_id" label="Leader" defaultValue={g.LeaderUserID || ""}
+                choices={[["", "Pilih anggota"], ...g.Members.map(m => [m.UserID, m.Username])]}
+                required />
             </Form>
           )}
           <Action confirmText={`Hapus group ${g.Name}?`}
@@ -204,7 +195,7 @@ export function Workspace({ path, params, data: d, session, run, post }) {
 
   if (path === "/audit-logs") {
     return <>
-      <h1>Audit log M1</h1>
+      <h1>Audit Logs</h1>
       <Table rows={d.audit_logs} columns={[
         ["Waktu", "CreatedAt"], ["Actor", "ActorUsername"], ["Aksi", "Action"],
         ["Resource", "ResourceType"], ["ID", "ResourceID"], ["Metadata", "Metadata"],
@@ -215,13 +206,100 @@ export function Workspace({ path, params, data: d, session, run, post }) {
   return <p>Halaman tidak ditemukan.</p>;
 }
 
-function Explorer({ d, id, post }) {
+function ActionDropdown({ label, accessibleLabel, className, onClose, children }) {
+  const menuId = useId();
+  const triggerRef = useRef(null);
+
+  function positionMenu(menu) {
+    const trigger = triggerRef.current;
+    const viewportHeight = document.documentElement.clientHeight;
+    const gap = 8;
+    if (viewportHeight - trigger.getBoundingClientRect().bottom < menu.offsetHeight + gap) {
+      menu.dataset.needsRoom = "true";
+      trigger.scrollIntoView({ block: "center", inline: "nearest" });
+    }
+
+    const { bottom, right } = trigger.getBoundingClientRect();
+    menu.style.setProperty("--trigger-right", `${right}px`);
+    menu.style.top = `${window.scrollY + bottom + gap}px`;
+    menu.style.maxHeight = `${Math.max(44, viewportHeight - bottom - gap * 2)}px`;
+    menu.dataset.positioned = "true";
+  }
+
+  return (
+    <>
+      <button ref={triggerRef} type="button" className="action-dropdown-toggle"
+        popoverTarget={menuId} aria-label={accessibleLabel}>
+        {label}
+      </button>
+      <div id={menuId} popover="auto" className={`action-dropdown ${className}`}
+        onToggle={event => {
+          const menu = event.currentTarget;
+          if (event.nativeEvent.newState === "open") {
+            positionMenu(menu);
+          } else {
+            delete menu.dataset.needsRoom;
+            delete menu.dataset.positioned;
+            menu.style.maxHeight = "";
+            onClose?.();
+          }
+        }}>
+        {children}
+      </div>
+    </>
+  );
+}
+
+function UserActions({ user, post }) {
+  const [showReset, setShowReset] = useState(false);
+
+  return (
+    <ActionDropdown label="Kelola" accessibleLabel={`Kelola ${user.Username}`}
+      className="user-action-options" onClose={() => setShowReset(false)}>
+      <Action onClick={() => post("/users/toggle-active",
+        { user_id: user.ID, is_active: String(!user.IsActive) })}>
+        {user.IsActive ? "Nonaktifkan akun" : "Aktifkan akun"}
+      </Action>
+      <Action confirmText={`Ubah role ${user.Username}?`}
+        onClick={() => post("/users/toggle-admin",
+          { user_id: user.ID, is_admin: String(!user.IsAdmin) })}>
+        {user.IsAdmin ? "Cabut hak admin" : "Jadikan admin"}
+      </Action>
+      <button type="button" aria-expanded={showReset}
+        onClick={() => setShowReset(open => !open)}>
+        Reset password
+      </button>
+      {showReset && (
+        <Form button="Simpan password"
+          onSave={values => post("/users/reset-password", { ...values, user_id: user.ID })}>
+          <Field name="new_password" label="Password baru"
+            type="password" minLength="8" autoComplete="new-password" required />
+        </Form>
+      )}
+    </ActionDropdown>
+  );
+}
+
+function Explorer({ d, id, post, run }) {
+  const [insertError, setInsertError] = useState("");
   const e = d.explorer;
   const columns = e.Columns || [];
   const scope = {
     id, source: "postgresql", schema: e.SelectedSchema,
     table: e.SelectedTable, page: e.Page,
   };
+
+  function insertRow(values) {
+    setInsertError("");
+    run(async () => {
+      const result = await api("/connections/explore/insert", {
+        method: "POST", form: { ...scope, ...values },
+      });
+      const message = result.navigate && new URLSearchParams(result.navigate.split("?")[1]).get("error");
+      if (message) throw new Error(message);
+      return result;
+    }, setInsertError);
+  }
 
   function rowIdentity(row, index) {
     const values = { ...scope, row_ctid: e.RowIDs?.[index] || "" };
@@ -231,6 +309,7 @@ function Explorer({ d, id, post }) {
 
   return <>
     <h1>Explorer · {d.connection.Name}</h1>
+    {d.success && !insertError && <p role="status">{d.success}</p>}
     <nav>{(e.Schemas || []).map(schema => (
       <a key={schema} href={dbLink("/connections/explore", id, { schema })}>{schema}</a>
     ))}</nav>
@@ -248,25 +327,25 @@ function Explorer({ d, id, post }) {
         ]} />
       </section>)}
 
-      {d.can_edit && <Form title="Tambah baris" button="Insert"
-        onSave={v => post("/connections/explore/insert", { ...scope, ...v })}>
+      {d.can_edit && <Form title="Tambah baris" button="Insert" onSave={insertRow}>
         {columns.map(col => <Field key={col} name={`col_${col}`} label={col} />)}
       </Form>}
+      {insertError && <p role="alert">{insertError}</p>}
 
       <Table rows={e.Rows} columns={[
         ...columns.map((name, i) => [name, row => row[i]]),
         ...(d.can_edit ? [["Ubah baris", (row, index) => (
-          <details>
-            <summary>Edit atau hapus</summary>
+          <ActionDropdown label="Edit atau hapus" accessibleLabel={`Edit atau hapus baris ${index + 1}`}
+            className="explorer-row-actions">
             <Form button="Simpan baris" onSave={v =>
               post("/connections/explore/update", { ...rowIdentity(row, index), ...v })}>
               {columns.map((col, i) => (
                 <Field key={col} name={`new_${i}`} label={col} defaultValue={row[i]} />
               ))}
             </Form>
-            <Action confirmText="Hapus baris ini?" onClick={() =>
+            <Action className="delete-row" confirmText="Hapus baris ini?" onClick={() =>
               post("/connections/explore/delete", rowIdentity(row, index))}>Hapus</Action>
-          </details>
+          </ActionDropdown>
         )]] : []),
       ]} />
       <nav>

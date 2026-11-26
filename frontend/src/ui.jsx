@@ -10,11 +10,13 @@ export function Field({ name, label = name, choices, ...props }) {
     <label>
       {label}
       {choices ? (
-        <select name={name} {...props}>
-          {choices.map(([value, text]) => (
-            <option key={value} value={value}>{text}</option>
-          ))}
-        </select>
+        <span className="select-field">
+          <select name={name} {...props}>
+            {choices.map(([value, text]) => (
+              <option key={value} value={value}>{text}</option>
+            ))}
+          </select>
+        </span>
       ) : (
         <input name={name} {...props} />
       )}
@@ -22,9 +24,9 @@ export function Field({ name, label = name, choices, ...props }) {
   );
 }
 
-export function Form({ title, onSave, button = "Simpan", children }) {
+export function Form({ className, title, onSave, button = "Simpan", children }) {
   return (
-    <form onSubmit={event => {
+    <form className={className} onSubmit={event => {
       event.preventDefault();
       const body = Object.fromEntries(new FormData(event.currentTarget));
       onSave(body, event.nativeEvent.submitter?.value);
@@ -61,9 +63,9 @@ export function Table({ rows = [], columns }) {
   );
 }
 
-export function Action({ children, onClick, confirmText }) {
+export function Action({ children, onClick, confirmText, className }) {
   return (
-    <button type="button" onClick={() => {
+    <button type="button" className={className} onClick={() => {
       if (!confirmText || window.confirm(confirmText)) onClick();
     }}>
       {children}
