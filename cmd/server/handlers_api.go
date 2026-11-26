@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/async"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/auth"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/authz"
@@ -161,10 +162,14 @@ func (app *application) migrationDatabaseListHandler(w http.ResponseWriter, r *h
 	canCreate := app.authorizer.Can(r.Context(), principal, authz.ActionMigrationCreate, authz.Resource{DatabaseID: int64(dbID)}) == nil
 
 	rows, err := app.stores.pgPool.Query(r.Context(), `
-		SELECT m.id,m.title,m.status,COALESCE(r.revision_no,1),COALESCE(r.mode,'single')
+		SELECT m.id,m.title,m.status,COALESCE(r.revision_no,1),COALESCE(a.action,'up')
 		FROM migrations m LEFT JOIN LATERAL (
-			SELECT revision_no,mode FROM migration_revisions WHERE migration_id=m.id ORDER BY revision_no DESC LIMIT 1
-		) r ON TRUE WHERE m.database_id=$1 ORDER BY m.updated_at DESC NULLS LAST,m.id DESC`, dbID)
+			SELECT revision_no FROM migration_revisions WHERE migration_id=m.id ORDER BY revision_no DESC LIMIT 1
+		) r ON TRUE
+		LEFT JOIN LATERAL (
+			SELECT action FROM approval_requests WHERE migration_id=m.id ORDER BY created_at DESC,id DESC LIMIT 1
+		) a ON TRUE
+		WHERE m.database_id=$1 ORDER BY m.updated_at DESC NULLS LAST,m.id DESC`, dbID)
 	if err != nil {
 		app.writeAPIError(w, err)
 		return
@@ -173,14 +178,18 @@ func (app *application) migrationDatabaseListHandler(w http.ResponseWriter, r *h
 	items := make([]migrationListItem, 0)
 	for rows.Next() {
 		var item migrationListItem
-		var workflow, mode string
-		if err := rows.Scan(&item.ID, &item.Name, &workflow, &item.Revision, &mode); err != nil {
+		var workflow, action string
+		if err := rows.Scan(&item.ID, &item.Name, &workflow, &item.Revision, &action); err != nil {
 			app.writeAPIError(w, err)
 			return
 		}
 		item.Workflow = workflow
-		item.Action = migration.ActionUp
+		item.Action = action
 		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		app.writeAPIError(w, err)
+		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items, "can_create": canCreate})
 }
@@ -235,35 +244,53 @@ func (app *application) writeMigrationDetail(w http.ResponseWriter, r *http.Requ
 		Revisions: []migrationRevision{}, Approvals: []migrationApproval{}, AllowedActions: []string{}, LatestJobID: nil,
 	}
 	rows, err := app.stores.pgPool.Query(r.Context(), `SELECT revision_no,up_sql,COALESCE(down_sql,'') FROM migration_revisions WHERE migration_id=$1 ORDER BY revision_no`, m.ID)
-	if err == nil {
-		defer rows.Close()
-		for rows.Next() {
-			var rev migrationRevision
-			if err := rows.Scan(&rev.Revision, &rev.SQLUp, &rev.SQLDown); err == nil {
-				detail.Revisions = append(detail.Revisions, rev)
-			}
-		}
+	if err != nil {
+		app.writeAPIError(w, err)
+		return
 	}
+	for rows.Next() {
+		var rev migrationRevision
+		if err := rows.Scan(&rev.Revision, &rev.SQLUp, &rev.SQLDown); err != nil {
+			rows.Close()
+			app.writeAPIError(w, err)
+			return
+		}
+		detail.Revisions = append(detail.Revisions, rev)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		app.writeAPIError(w, err)
+		return
+	}
+	rows.Close()
 	var latestReq *migration.ApprovalRequest
 	var latestReqID int64
 	err = app.stores.pgPool.QueryRow(r.Context(), `SELECT id FROM approval_requests WHERE migration_id=$1 ORDER BY created_at DESC,id DESC LIMIT 1`, m.ID).Scan(&latestReqID)
 	if err == nil {
 		req, reqErr := app.migStore.GetApprovalRequest(r.Context(), latestReqID)
-		if reqErr == nil {
-			latestReq = req
-			detail.Action = req.Action
-			for _, g := range req.Groups {
-				detail.Approvals = append(detail.Approvals, migrationApproval{GroupName: g.GroupName, LeaderName: g.LeaderUsername, Status: g.Status})
-			}
+		if reqErr != nil {
+			app.writeAPIError(w, reqErr)
+			return
 		}
+		latestReq = req
+		detail.Action = req.Action
+		for _, g := range req.Groups {
+			detail.Approvals = append(detail.Approvals, migrationApproval{GroupName: g.GroupName, LeaderName: g.LeaderUsername, Status: g.Status})
+		}
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		app.writeAPIError(w, err)
+		return
 	}
 
 	var pendingMyApprove int
-	_ = app.stores.pgPool.QueryRow(r.Context(), `
+	if err := app.stores.pgPool.QueryRow(r.Context(), `
 		SELECT COUNT(*) FROM approval_groups ag
 		JOIN approval_requests ar ON ar.id=ag.approval_request_id
 		WHERE ar.migration_id=$1 AND ar.status='pending' AND ag.status='pending' AND ag.leader_user_id=$2
-	`, m.ID, u.ID).Scan(&pendingMyApprove)
+	`, m.ID, u.ID).Scan(&pendingMyApprove); err != nil {
+		app.writeAPIError(w, err)
+		return
+	}
 
 	allowed := []string{}
 	if pendingMyApprove > 0 {
@@ -278,14 +305,21 @@ func (app *application) writeMigrationDetail(w http.ResponseWriter, r *http.Requ
 	case migration.StatusExecuted:
 		if latestReq != nil && latestReq.Status == migration.ApprovalApproved && (latestReq.Action == migration.ActionDown || latestReq.Action == migration.ActionForward) {
 			var usedCount int
-			_ = app.stores.pgPool.QueryRow(r.Context(), `SELECT COUNT(*) FROM executions WHERE approval_request_id=$1`, latestReq.ID).Scan(&usedCount)
+			if err := app.stores.pgPool.QueryRow(r.Context(), `SELECT COUNT(*) FROM executions WHERE approval_request_id=$1`, latestReq.ID).Scan(&usedCount); err != nil {
+				app.writeAPIError(w, err)
+				return
+			}
 			if usedCount == 0 {
 				allowed = append(allowed, "execute")
 			}
 		}
 		if m.Active && !latest.Irreversible {
 			activeMig, activeErr := app.migStore.GetActiveMigration(r.Context(), m.DatabaseID)
-			if activeErr == nil && activeMig.ID == m.ID {
+			if activeErr != nil {
+				app.writeAPIError(w, activeErr)
+				return
+			}
+			if activeMig.ID == m.ID {
 				allowed = append(allowed, "rollback")
 			}
 		}
@@ -295,13 +329,19 @@ func (app *application) writeMigrationDetail(w http.ResponseWriter, r *http.Requ
 	var latestJob string
 	if err := app.stores.pgPool.QueryRow(r.Context(), `SELECT job_id FROM executions WHERE migration_id=$1 ORDER BY created_at DESC,id DESC LIMIT 1`, m.ID).Scan(&latestJob); err == nil {
 		detail.LatestJobID = &latestJob
-	} else if m.Status == migration.StatusExecuted || m.Status == migration.StatusFailed {
+	} else if errors.Is(err, pgx.ErrNoRows) && (m.Status == migration.StatusExecuted || m.Status == migration.StatusFailed) {
 		legacyJob := fmt.Sprintf("legacy-M%d", m.ID)
 		detail.LatestJobID = &legacyJob
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		app.writeAPIError(w, err)
+		return
 	}
 	if m.Status == migration.StatusExecuted && !m.Active {
 		var downCount int
-		_ = app.stores.pgPool.QueryRow(r.Context(), `SELECT COUNT(*) FROM executions WHERE migration_id=$1 AND action='down' AND status='success' AND NOT EXISTS (SELECT 1 FROM executions f WHERE f.rollback_of=executions.id AND f.action='forward' AND f.status='success')`, m.ID).Scan(&downCount)
+		if err := app.stores.pgPool.QueryRow(r.Context(), `SELECT COUNT(*) FROM executions WHERE migration_id=$1 AND action='down' AND status='success' AND NOT EXISTS (SELECT 1 FROM executions f WHERE f.rollback_of=executions.id AND f.action='forward' AND f.status='success')`, m.ID).Scan(&downCount); err != nil {
+			app.writeAPIError(w, err)
+			return
+		}
 		if downCount > 0 {
 			allowed = append(allowed, "forward")
 		}
@@ -447,7 +487,7 @@ func (app *application) migrationRollbackRequestHandler(w http.ResponseWriter, r
 		app.writeAPIError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "approval_request_id": req.ID})
+	writeJSON(w, http.StatusAccepted, map[string]any{"id": req.ID})
 }
 
 func (app *application) migrationForwardRequestHandler(w http.ResponseWriter, r *http.Request) {
@@ -461,7 +501,7 @@ func (app *application) migrationForwardRequestHandler(w http.ResponseWriter, r 
 		app.writeAPIError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "approval_request_id": req.ID})
+	writeJSON(w, http.StatusAccepted, map[string]any{"id": req.ID})
 }
 
 func (app *application) reviewListHandler(w http.ResponseWriter, r *http.Request) {
