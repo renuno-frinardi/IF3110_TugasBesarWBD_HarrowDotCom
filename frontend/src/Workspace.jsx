@@ -9,6 +9,12 @@ function pgOnly(rows) {
   return (rows || []).filter(row => !["mariadb", "mysql"].includes(row.DBType));
 }
 
+function accessLabel(level) {
+  if (level === "view_edit") return "View + Edit";
+  if (level === "view_only") return "View";
+  return level || "Tidak diketahui";
+}
+
 function dbLink(path, id, extra = {}) {
   return link(path, { id, source: "postgresql", ...extra });
 }
@@ -154,7 +160,7 @@ export function Workspace({ path, params, data: d, session, run, post }) {
               <span>{m.Username}{" "}
                 {g.LeaderUserID === m.UserID && <strong>Leader</strong>}
               </span>
-              <button type="button" className="remove-member"
+              <button type="button" className="remove-member danger-button"
                 aria-label={`Keluarkan ${m.Username}`}
                 onClick={() => post("/groups/members/remove", { group_id: g.ID, user_id: m.UserID })}>
                 Keluarkan
@@ -179,21 +185,55 @@ export function Workspace({ path, params, data: d, session, run, post }) {
   }
 
   if (path === "/access") {
+    const grants = pgOnly(d.grants);
     return <>
-      <h1>Akses database</h1>
-      <Form button="Berikan akses" onSave={v => post("/access/grant", v)}>
+      <div className="page-heading">
+        <div>
+          <h1>Akses database</h1>
+          <p>Atur hak akses setiap group ke koneksi database.</p>
+        </div>
+        <span className="access-count">{grants.length} akses aktif</span>
+      </div>
+      <Form className="access-form" title="Berikan akses baru"
+        onSave={v => post("/access/grant", v)} button="Berikan akses">
+        <p className="form-description">
+          Pilih group, database, dan tingkat izin yang akan diberikan.
+        </p>
         <Field name="group_id" label="Group" choices={options(d.groups, "Name")} required />
         <Field name="database_connection_id" label="Database"
           choices={options(pgOnly(d.connections), "Name")} required />
         <Field name="access_level" label="Hak akses" required
-          choices={[["view_only", "View"], ["view_edit", "View + edit"]]} />
+          choices={[["view_only", "View"], ["view_edit", "View + Edit"]]} />
       </Form>
-      <Table rows={pgOnly(d.grants)} columns={[
-        ["Group", "GroupName"], ["Koneksi", "ConnectionName"], ["Akses", "AccessLevel"],
-        ["Aksi", row => <Action onClick={() => post("/access/revoke", {
-          group_id: row.GroupID, database_connection_id: row.DatabaseConnectionID,
-        })}>Cabut akses</Action>],
-      ]} />
+      <section className="access-list">
+        <div className="access-list-heading">
+          <div>
+            <h2>Akses yang sudah diberikan</h2>
+            <p>Kelola izin group pada setiap koneksi.</p>
+          </div>
+        </div>
+        {grants.length ? (
+          <div className="access-table">
+            <Table rows={grants} columns={[
+              ["Group", "GroupName"], ["Koneksi", "ConnectionName"],
+              ["Akses", row => {
+                const editAccess = row.AccessLevel === "view_edit";
+                return <span className={`access-badge ${editAccess
+                  ? "access-badge--edit" : "access-badge--view"}`}>
+                  {accessLabel(row.AccessLevel)}
+                </span>;
+              }],
+              ["Aksi", row => <Action className="danger-button"
+                confirmText={`Cabut akses ${accessLabel(row.AccessLevel)} untuk group ${row.GroupName}?`}
+                onClick={() => post("/access/revoke", {
+                  group_id: row.GroupID, database_connection_id: row.DatabaseConnectionID,
+                })}>Cabut akses</Action>],
+            ]} />
+          </div>
+        ) : (
+          <p className="access-empty">Belum ada akses database yang diberikan.</p>
+        )}
+      </section>
     </>;
   }
 

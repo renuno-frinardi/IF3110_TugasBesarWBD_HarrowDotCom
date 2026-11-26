@@ -155,10 +155,68 @@ td form, td details { min-width: 11rem; }
 .user-action-options > button { background: #565656; border-color: #565656; }
 .explorer-row-actions { --action-width: min(19rem, calc(100% - 1rem)); }
 .explorer-row-actions .delete-row { background: #a12c40; border-color: #a12c40; }
+.danger-button {
+  background: #fff1f0;
+  border-color: #e6aaa5;
+  color: #8d2924;
+}
+.danger-button:not(:disabled):hover { background: #ffe2df; }
 main:has(.action-dropdown[data-needs-room]:popover-open)::after {
   content: "";
   display: block;
   height: min(12rem, 50dvh);
+}
+
+.page-heading, .access-list-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.page-heading { margin-block: 1rem; }
+.page-heading h1, .access-list-heading h2 { margin: 0; }
+.page-heading p, .access-list-heading p, .form-description {
+  margin: .25rem 0 0;
+  color: #52676c;
+}
+.access-count {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.8rem;
+  padding: .2rem .65rem;
+  border-radius: 999px;
+  background: #e4f1eb;
+  color: #075c43;
+  font-size: .875rem;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.access-form { max-width: 56rem; }
+.access-form > h3, .access-form > .form-description, .access-form > button {
+  grid-column: 1 / -1;
+}
+.access-form > button { justify-self: start; }
+.access-list { padding: 1rem; }
+.access-table tbody tr:hover { background: #f4f8f6; }
+.access-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.75rem;
+  padding: .15rem .6rem;
+  border-radius: 999px;
+  font-size: .875rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.access-badge--edit { background: #e4f1eb; color: #075c43; }
+.access-badge--view { background: #e9eff1; color: #405c64; }
+.access-empty {
+  margin: 1rem 0 0;
+  padding: 1rem;
+  border: 1px dashed #b6c8c3;
+  border-radius: .4rem;
+  color: #52676c;
+  text-align: center;
 }
 
 [role="alert"] { color: #96251e; overflow-wrap: anywhere; }
@@ -173,16 +231,13 @@ main:has(.action-dropdown[data-needs-room]:popover-open)::after {
   gap: .75rem;
 }
 .remove-member {
-  padding: 0 .25rem;
-  border: 0;
-  background: transparent;
-  color: #96251e;
+  min-height: 2.4rem;
+  padding: .35rem .7rem;
   font-size: .875rem;
 }
 .remove-member:not(:disabled):hover {
   transform: none;
   box-shadow: none;
-  text-decoration: underline;
 }
 
 header, main {
@@ -220,20 +275,30 @@ header :focus-visible { outline-color: #ffdb9b; }
   color: white;
   font-weight: 550;
   text-decoration: none;
+  transition: background-color .15s ease-out, box-shadow .15s ease-out;
 }
 
 #main-nav a:hover, #main-nav a:focus-visible {
   background: #ffffff26;
   text-decoration: underline;
 }
+#main-nav a[aria-current="page"] {
+  background: #ffffff24;
+  box-shadow: inset 0 -2px #d5eee1, 0 0 0 1px #ffffff18;
+  backdrop-filter: blur(8px);
+}
 
 .logout-button {
   grid-column: 3;
   grid-row: 1;
   justify-self: end;
-  color: #781c2e;
-  background: #ffe3df;
-  border-color: #ffe3df;
+  color: white;
+  background: #a12c40;
+  border-color: #a12c40;
+}
+.logout-button:not(:disabled):hover {
+  background: #842235;
+  border-color: #842235;
 }
 
 .menu-toggle {
@@ -274,6 +339,12 @@ dd {
 }
 
 @media (min-width: 42rem) {
+  .access-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: end;
+  }
+  .access-form > label:nth-of-type(3) { grid-column: 1 / -1; }
+
   .connection-form {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     align-items: end;
@@ -297,7 +368,14 @@ dd {
   form { gap: .65rem; }
   .table-scroll { margin-block: .75rem; }
   th, td { padding: .5rem; }
+  .access-list { padding: .75rem; }
+}
 
+@media (max-width: 36rem) {
+  .page-heading, .access-list-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 
 @media (min-width: 47rem) and (max-width: 56rem) {

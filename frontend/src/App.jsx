@@ -149,16 +149,30 @@ export default function App() {
                   if (event.target.closest("a")) setMenuOpen(false);
                 }}
               >
-                <a href={link("/")}>Dashboard</a>
-                <a href={link("/connections")}>Koneksi</a>
-                <a href={link("/reviews")}>Review Saya</a>
+                <a href={link("/")} aria-current={path === "/" ? "page" : undefined}>
+                  Dashboard
+                </a>
+                <a href={link("/connections")}
+                  aria-current={path.startsWith("/connections") ? "page" : undefined}>
+                  Koneksi
+                </a>
+                <a href={link("/reviews")}
+                  aria-current={path === "/reviews" ? "page" : undefined}>
+                  Review Saya
+                </a>
 
                 {session.is_admin && (
                   <>
-                    <a href={link("/users")}>Users</a>
-                    <a href={link("/groups")}>Groups</a>
-                    <a href={link("/access")}>Akses</a>
-                    <a href={link("/audit-logs")}>Audit Logs</a>
+                    <a href={link("/users")}
+                      aria-current={path === "/users" ? "page" : undefined}>Users</a>
+                    <a href={link("/groups")}
+                      aria-current={path === "/groups" ? "page" : undefined}>Groups</a>
+                    <a href={link("/access")}
+                      aria-current={path === "/access" ? "page" : undefined}>Akses</a>
+                    <a href={link("/audit-logs")}
+                      aria-current={path === "/audit-logs" ? "page" : undefined}>
+                      Audit Logs
+                    </a>
                   </>
                 )}
               </nav>
