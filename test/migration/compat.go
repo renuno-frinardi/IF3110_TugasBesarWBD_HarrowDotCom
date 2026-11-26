@@ -46,6 +46,10 @@ func validateSQL(sqlText string) error {
 	return impl.ValidateSQL(sqlText)
 }
 
+func validateWorkflowSQL(mode, upSQL, downSQL string, cfg impl.BatchConfig) error {
+	return impl.ValidateWorkflowSQL(mode, upSQL, downSQL, cfg)
+}
+
 func targetConfig(connection store.DatabaseConnection, password string) (*pgx.ConnConfig, error) {
 	return impl.TargetConfig(connection, password)
 }

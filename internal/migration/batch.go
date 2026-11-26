@@ -64,7 +64,8 @@ func validateBatchSQL(mode string, upSQL, downSQL string) error {
 	return nil
 }
 
-func validateWorkflowSQL(mode, upSQL, downSQL string, cfg BatchConfig) error {
+// validates migration SQL
+func ValidateWorkflowSQL(mode, upSQL, downSQL string, cfg BatchConfig) error {
 	validate := func(query string) error {
 		if strings.EqualFold(strings.TrimSpace(mode), ModeBatch) {
 			replacer := strings.NewReplacer(
