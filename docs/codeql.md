@@ -28,5 +28,6 @@ Isi satu baris per alert. Tulis alasan teknis untuk keputusan **Perbaiki**, **Fa
 | Rule / tautan alert | Severity | Lokasi kode | Potensi dampak | Keputusan dan alasan | Commit perbaikan | Bukti scan ulang |
 | --- | --- | --- | --- | --- | --- | --- |
 | `<rule ID> + <link alert>` | `<severity di GitHub>` | `<path/file:baris>` | `<dampak jika temuan valid>` | `<keputusan dan alasan>` | `<SHA perbaikan>` | `<link run dan hasil alert>` |
+| [Hasil Code Scanning PR #17](https://github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/security/code-scanning?query=pr%3A17+tool%3ACodeQL+is%3Aopen) | - | - | - | Tidak ada alert CodeQL pada PR#17 | - | - | 
 
 Kalau kedua job berhasil (tidak ada alert), ganti tabel temuan dengan `Tidak ada temuan`. 
