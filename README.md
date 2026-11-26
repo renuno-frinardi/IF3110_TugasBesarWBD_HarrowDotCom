@@ -274,7 +274,7 @@ Script `test/k6/stress.js` menguji API dan eksekusi migration secara bersamaan. 
    k6 run --summary-export=test/k6/results-different-databases.json test/k6/stress.js
    ```
 
-Default threshold: API p95 `< 1000 ms`, error API `< 1%`, dan job sukses `> 95%`. `202 Accepted` hanya berarti job diterima; job dihitung sukses setelah status terminal berhasil. HTTP 409 dicatat terpisah sebagai konflik enqueue dan tidak masuk ke metrik error API.
+Default threshold: API p95 `< 1000 ms`, error API `< 1%`, dan job sukses `> 95%`. `202 Accepted` hanya berarti job diterima. Job dihitung sukses setelah status terminal berhasil. HTTP 409 dicatat terpisah sebagai konflik enqueue dan tidak masuk ke metrik error API.
 
 ### Hasil pengujian
 
@@ -300,7 +300,7 @@ Per tingkat beban (throughput dihitung per jendela 30 detik):
 | Berbeda — pemulihan 2x | 29.6 / 4646.7 ms | 5.167 | 0% | 1.500 | 24.6 ms | 1073.6 ms |
 | Berbeda — pemulihan normal | 22.4 / 3016.3 ms | 3.600 | 0% | 1.133 | 18 ms | 1053.8 ms |
 
-P95 meningkat saat beban naik dan turun saat pemulihan, tetapi tetap di atas target 1 detik. Queue wait p95 hanya 23–25 ms; hasil ini menunjukkan keterlambatan utama ada pada respons API, bukan antrean worker. Konflik 409 berjumlah 68 pada skenario satu database dan 42 pada dua database.
+P95 meningkat saat beban naik dan turun saat pemulihan, tetapi tetap di atas target 1 detik. Queue wait p95 hanya 23–25 ms. Hasil ini menunjukkan keterlambatan utama ada pada respons API, bukan antrean worker. Konflik 409 berjumlah 68 pada skenario satu database dan 42 pada dua database.
 
 ## Menghentikan Aplikasi
 
