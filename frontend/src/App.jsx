@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, setCSRF } from "./api";
 import { Field, Form, link } from "./ui";
 import { Workspace } from "./Workspace";
@@ -42,12 +42,12 @@ export default function App() {
     return () => window.removeEventListener("hashchange", changed);
   }, []);
 
-  function expire() {
+  const expire = useCallback(() => {
     setCSRF("");
-    setSession(null);
     setPage(null);
+    setSession(null);
     window.location.hash = "/login";
-  }
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -89,7 +89,7 @@ export default function App() {
     });
 
     return () => controller.abort();
-  }, [route, refresh, publicPage]);
+  }, [route, refresh, publicPage, expire]);
 
   async function run(operation) {
     if (submitting.current) return;
@@ -122,7 +122,7 @@ export default function App() {
     return run(() => api(endpoint, { method: "POST", form: body }));
   }
 
-  const ready = page?.route === route;
+  const ready = page?.route === route && (publicPage || session !== null);
 
   return (
     <>
@@ -134,48 +134,46 @@ export default function App() {
             <button
               type="button"
               className="menu-toggle"
-              aria-controls="main-nav main-logout"
+              aria-controls="main-menu"
               aria-expanded={menuOpen}
               onClick={() => setMenuOpen(open => !open)}
             >
               Menu
             </button>
 
-            <nav
-              id="main-nav"
-              aria-label="Navigasi utama"
-              data-open={menuOpen}
-              onClick={event => {
-                if (event.target.closest("a")) setMenuOpen(false);
-              }}
-            >
-              <a href={link("/")}>Dashboard</a>
-              <a href={link("/connections")}>Koneksi</a>
-              <a href={link("/reviews")}>Review Saya</a>
+            <div id="main-menu" data-open={menuOpen}>
+              <nav
+                id="main-nav"
+                aria-label="Navigasi utama"
+                onClick={event => {
+                  if (event.target.closest("a")) setMenuOpen(false);
+                }}
+              >
+                <a href={link("/")}>Dashboard</a>
+                <a href={link("/connections")}>Koneksi</a>
+                <a href={link("/reviews")}>Review Saya</a>
 
-              {session.is_admin && (
-                <>
-                  <a href={link("/users")}>Users</a>
-                  <a href={link("/groups")}>Groups</a>
-                  <a href={link("/access")}>Akses</a>
-                  <a href={link("/audit-logs")}>Audit Logs</a>
-                </>
-              )}
-            </nav>
-            <button
-              type="button"
-              id="main-logout"
-              className="logout-button"
-              disabled={busy}
-              onClick={() => run(async () => {
-                await api("/logout", { method: "POST", form: {} });
-                setSession(null);
-                setCSRF("");
-                return { navigate: "/login" };
-              })}
-            >
-              Keluar
-            </button>
+                {session.is_admin && (
+                  <>
+                    <a href={link("/users")}>Users</a>
+                    <a href={link("/groups")}>Groups</a>
+                    <a href={link("/access")}>Akses</a>
+                    <a href={link("/audit-logs")}>Audit Logs</a>
+                  </>
+                )}
+              </nav>
+              <button
+                type="button"
+                className="logout-button"
+                disabled={busy}
+                onClick={() => run(async () => {
+                  await api("/logout", { method: "POST", form: {} });
+                  expire();
+                })}
+              >
+                Keluar
+              </button>
+            </div>
           </>
         )}
       </header>

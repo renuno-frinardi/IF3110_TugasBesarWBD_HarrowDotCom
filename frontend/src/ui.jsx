@@ -10,11 +10,13 @@ export function Field({ name, label = name, choices, ...props }) {
     <label>
       {label}
       {choices ? (
-        <select name={name} {...props}>
-          {choices.map(([value, text]) => (
-            <option key={value} value={value}>{text}</option>
-          ))}
-        </select>
+        <span className="select-field">
+          <select name={name} {...props}>
+            {choices.map(([value, text]) => (
+              <option key={value} value={value}>{text}</option>
+            ))}
+          </select>
+        </span>
       ) : (
         <input name={name} {...props} />
       )}

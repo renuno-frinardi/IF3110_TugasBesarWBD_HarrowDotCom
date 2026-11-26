@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useRef, useState } from "react";
 import { api } from "./api";
 import { Action, Field, Form, Table, link } from "./ui";
 
@@ -147,7 +147,7 @@ export function Workspace({ path, params, data: d, session, run, post }) {
           </Form>
           <ul>{(g.Members || []).map(m => (
             <li key={m.UserID}>{m.Username}{" "}
-              {g.LeaderID === m.UserID && <strong>Leader </strong>}
+              {g.LeaderUserID === m.UserID && <strong>Leader </strong>}
               <Action onClick={() => post("/groups/members/remove",
                 { group_id: g.ID, user_id: m.UserID })}>Keluarkan</Action>
             </li>
@@ -157,8 +157,9 @@ export function Workspace({ path, params, data: d, session, run, post }) {
               api(`/v2/groups/${g.ID}/leader`, {
                 method: "PUT", json: { user_id: Number(v.user_id) },
               }))}>
-              <Field name="user_id" label="Leader" defaultValue={g.LeaderID || ""}
-                choices={g.Members.map(m => [m.UserID, m.Username])} required />
+              <Field name="user_id" label="Leader" defaultValue={g.LeaderUserID || ""}
+                choices={[["", "Pilih anggota"], ...g.Members.map(m => [m.UserID, m.Username])]}
+                required />
             </Form>
           )}
           <Action confirmText={`Hapus group ${g.Name}?`}
@@ -189,7 +190,7 @@ export function Workspace({ path, params, data: d, session, run, post }) {
 
   if (path === "/audit-logs") {
     return <>
-      <h1>Audit log M1</h1>
+      <h1>Audit Logs</h1>
       <Table rows={d.audit_logs} columns={[
         ["Waktu", "CreatedAt"], ["Actor", "ActorUsername"], ["Aksi", "Action"],
         ["Resource", "ResourceType"], ["ID", "ResourceID"], ["Metadata", "Metadata"],
@@ -202,13 +203,43 @@ export function Workspace({ path, params, data: d, session, run, post }) {
 
 function UserActions({ user, post }) {
   const [showReset, setShowReset] = useState(false);
+  const menuId = useId();
+  const triggerRef = useRef(null);
+
+  function positionMenu(menu) {
+    const trigger = triggerRef.current;
+    const viewportHeight = document.documentElement.clientHeight;
+    const gap = 8;
+    if (viewportHeight - trigger.getBoundingClientRect().bottom < menu.offsetHeight + gap) {
+      menu.dataset.needsRoom = "true";
+      trigger.scrollIntoView({ block: "center", inline: "nearest" });
+    }
+
+    const { bottom, right } = trigger.getBoundingClientRect();
+    menu.style.setProperty("--trigger-right", `${right}px`);
+    menu.style.top = `${window.scrollY + bottom + gap}px`;
+    menu.style.maxHeight = `${Math.max(44, viewportHeight - bottom - gap * 2)}px`;
+    menu.dataset.positioned = "true";
+  }
 
   return (
-    <details className="user-actions" onToggle={event => {
-      if (!event.currentTarget.open) setShowReset(false);
-    }}>
-      <summary aria-label={`Kelola ${user.Username}`}>Kelola</summary>
-      <div className="user-action-options">
+    <>
+      <button ref={triggerRef} type="button" className="user-actions-toggle"
+        popoverTarget={menuId} aria-label={`Kelola ${user.Username}`}>
+        Kelola
+      </button>
+      <div id={menuId} popover="auto" className="user-action-options"
+        onToggle={event => {
+          const menu = event.currentTarget;
+          if (event.nativeEvent.newState === "open") {
+            positionMenu(menu);
+          } else {
+            delete menu.dataset.needsRoom;
+            delete menu.dataset.positioned;
+            menu.style.maxHeight = "";
+            setShowReset(false);
+          }
+        }}>
         <Action onClick={() => post("/users/toggle-active",
           { user_id: user.ID, is_active: String(!user.IsActive) })}>
           {user.IsActive ? "Nonaktifkan akun" : "Aktifkan akun"}
@@ -230,7 +261,7 @@ function UserActions({ user, post }) {
           </Form>
         )}
       </div>
-    </details>
+    </>
   );
 }
 
@@ -250,6 +281,7 @@ function Explorer({ d, id, post }) {
 
   return <>
     <h1>Explorer · {d.connection.Name}</h1>
+    {d.success && <p role="status">{d.success}</p>}
     <nav>{(e.Schemas || []).map(schema => (
       <a key={schema} href={dbLink("/connections/explore", id, { schema })}>{schema}</a>
     ))}</nav>
@@ -275,7 +307,7 @@ function Explorer({ d, id, post }) {
       <Table rows={e.Rows} columns={[
         ...columns.map((name, i) => [name, row => row[i]]),
         ...(d.can_edit ? [["Ubah baris", (row, index) => (
-          <details>
+          <details className="explorer-row-actions">
             <summary>Edit atau hapus</summary>
             <Form button="Simpan baris" onSave={v =>
               post("/connections/explore/update", { ...rowIdentity(row, index), ...v })}>

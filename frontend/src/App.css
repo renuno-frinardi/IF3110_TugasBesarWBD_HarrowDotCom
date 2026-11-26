@@ -16,7 +16,8 @@ nav { margin-block: .75rem; }
 
 main, .screen, section, form, label, details { min-width: 0; }
 
-.screen { border: 0; margin: 0; padding: 0; }
+.screen { border: 0; margin: 0; padding: 0; max-width: 100%; }
+main { overflow-wrap: anywhere; }
 
 section, form {
   margin-block: 1rem;
@@ -25,7 +26,7 @@ section, form {
   border-radius: .5rem;
   background: white;
 }
-form { display: grid; gap: .8rem; max-width: 48rem; }
+form { display: grid; grid-template-columns: minmax(0, 1fr); gap: .8rem; max-width: 48rem; }
 form h3, section h3 { margin: 0; }
 
 label { display: grid; gap: .25rem; }
@@ -37,9 +38,30 @@ input:not([type="checkbox"]), select, textarea {
   font: inherit; background: white;
 }
 
+.select-field { position: relative; min-width: 0; }
+.select-field select { appearance: none; padding-inline-end: 2.25rem; }
+.select-field::after {
+  content: "";
+  position: absolute;
+  inset-inline-end: .85rem;
+  top: 50%;
+  width: .45rem;
+  height: .45rem;
+  border: solid currentColor;
+  border-width: 0 2px 2px 0;
+  transform: translateY(-70%) rotate(45deg);
+  pointer-events: none;
+}
+
+@media (forced-colors: active) {
+  .select-field select { appearance: auto; padding-inline-end: .65rem; }
+  .select-field::after { display: none; }
+}
+
 textarea, pre { font-family: ui-monospace, monospace; }
 textarea { min-height: 8rem; resize: vertical; }
-pre { max-width: min(65ch, 80vw); overflow: auto; padding: .5rem; }
+.sql-editor, pre { overflow-x: auto; white-space: pre; overflow-wrap: normal; }
+pre { max-width: 100%; padding: .5rem; }
 
 button {
   width: fit-content; max-width: 100%; min-height: 2.6rem; cursor: pointer;
@@ -49,20 +71,20 @@ button {
 button:disabled { opacity: .6; }
 
 @media (hover: hover) and (pointer: fine) {
-  button:not(:disabled):hover, .user-actions > summary:hover {
+  button:not(:disabled):hover {
     transform: translateY(-2px) scale(1.04);
     box-shadow: 0 4px 10px #192e3533;
   }
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  button, .user-actions > summary {
+  button {
     transition: transform .15s ease-out, box-shadow .15s ease-out;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  button:not(:disabled):hover, .user-actions > summary:hover { transform: none; }
+  button:not(:disabled):hover { transform: none; }
 }
 
 :focus-visible { outline: 3px solid #a85604; outline-offset: 2px; }
@@ -73,44 +95,54 @@ th, td { padding: .65rem; border-bottom: 1px solid #d6e1de; text-align: left; }
 td { vertical-align: top; overflow-wrap: anywhere; }
 td form, td details { min-width: 11rem; }
 
-.user-actions { min-width: 0; }
-.user-actions > summary {
+.user-actions-toggle {
   display: inline-flex;
   align-items: center;
   gap: .55rem;
-  width: fit-content;
-  padding: .45rem .85rem;
-  border: 1px solid #176660;
-  border-radius: .35rem;
-  background: #12645e;
-  color: white;
+  max-width: none;
+  white-space: nowrap;
 }
-.user-actions > summary::-webkit-details-marker { display: none; }
-.user-actions > summary::after {
+.user-actions-toggle::after {
   content: "";
   width: .45em;
   height: .45em;
+  flex: none;
   border: solid currentColor;
   border-width: 0 2px 2px 0;
   transform: translateY(-.12em) rotate(45deg);
 }
-.user-actions[open] > summary::after {
+.user-actions-toggle:has(+ :popover-open)::after {
   transform: translateY(.12em) rotate(225deg);
 }
-.user-action-options { display: grid; gap: 8px; margin-top: 8px; }
-.user-action-options form { margin: 0; }
+.user-action-options {
+  --action-width: min(12rem, calc(100% - 1rem));
+  position: absolute;
+  inset: auto;
+  left: clamp(.5rem, calc(var(--trigger-right, 100%) - var(--action-width)), calc(100% - var(--action-width) - .5rem));
+  width: var(--action-width);
+  margin: 0;
+  padding: .5rem;
+  overflow: auto;
+  border: 1px solid #cad7d4;
+  border-radius: .5rem;
+  background: white;
+  color: inherit;
+  box-shadow: 0 6px 16px #192e3540;
+}
+.user-action-options:popover-open { display: grid; gap: .5rem; }
+.user-action-options:popover-open:not([data-positioned]) { visibility: hidden; }
+.user-action-options form { min-width: 0; margin: 0; padding: .5rem; }
+.user-action-options button { width: 100%; }
 .user-action-options > button { background: #565656; border-color: #565656; }
+main:has(.user-action-options[data-needs-room]:popover-open)::after {
+  content: "";
+  display: block;
+  height: min(12rem, 50dvh);
+}
 
 [role="alert"] { color: #96251e; overflow-wrap: anywhere; }
 [role="status"] { overflow-wrap: anywhere; }
-
-@media (max-width: 600px) {
-  header, main { padding: .85rem; }
-  nav a { display: inline-flex; align-items: center; min-height: 2.75rem; }
-  section, form { padding: .75rem; }
-  h1 { font-size: 1.45rem; overflow-wrap: anywhere; }
-  .actions { align-items: stretch; }
-}
+.job-id { color: #4a6269; font-size: .875rem; }
 
 header, main {
   padding-inline: clamp(.75rem, 3vw, 2rem);
@@ -131,6 +163,8 @@ header {
 header :focus-visible { outline-color: #ffdb9b; }
 
 .brand { justify-self: start; }
+
+#main-menu { display: contents; }
 
 #main-nav {
   justify-content: center;
@@ -153,6 +187,8 @@ header :focus-visible { outline-color: #ffdb9b; }
 }
 
 .logout-button {
+  grid-column: 3;
+  grid-row: 1;
   justify-self: end;
   color: #781c2e;
   background: #ffe3df;
@@ -161,14 +197,6 @@ header :focus-visible { outline-color: #ffdb9b; }
 
 .menu-toggle {
   display: none;
-}
-
-.screen, form, section, nav, dd {
-  overflow-wrap: anywhere;
-}
-
-form {
-  grid-template-columns: minmax(0, 1fr);
 }
 
 button, summary, nav a, .actions a {
@@ -182,13 +210,6 @@ nav a, .actions a {
 
 summary {
   cursor: pointer;
-}
-
-pre {
-  max-width: 100%;
-  overflow-x: auto;
-  white-space: pre;
-  overflow-wrap: normal;
 }
 
 .table-scroll {
@@ -222,33 +243,115 @@ dd {
   }
 }
 
-/* Navigasi buat tablet, HP */
 @media (max-width: 56rem) {
-  header { grid-template-columns: 1fr auto; }
+  header { grid-template-columns: auto minmax(0, 1fr) auto; gap: .5rem; padding-inline: .75rem; }
+  .brand { font-size: 1.25rem; }
+  #main-nav { gap: .15rem; font-size: .8125rem; }
+  #main-nav a, .logout-button { padding-inline: .3rem; }
+  .logout-button { font-size: .8125rem; }
+
+  main { padding-block: .75rem; }
+
+  section, form { margin-block: .75rem; padding: .75rem; }
+  form { gap: .65rem; }
+  .table-scroll { margin-block: .75rem; }
+  th, td { padding: .5rem; }
+
+  .explorer-row-actions {
+    width: 13rem;
+    min-width: 0;
+    max-width: 70vw;
+  }
+
+  .explorer-row-actions form { min-width: 0; }
+}
+
+@media (min-width: 47rem) and (max-width: 56rem) {
+  #main-nav { gap: .45rem; font-size: .9375rem; }
+  .logout-button { font-size: .9375rem; padding-inline: .5rem; }
+}
+
+@media (max-width: 42rem) {
+  header {
+    --menu-width: 8.25rem;
+    position: relative;
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding-block: .5rem;
+  }
 
   .menu-toggle {
     display: inline-flex;
     align-items: center;
+    justify-content: space-between;
+    gap: .55rem;
+    width: var(--menu-width);
+    padding-inline: .65rem;
     border-color: #ffffff80;
+    font-size: .875rem;
   }
 
-  #main-nav, .logout-button { display: none; }
+  .menu-toggle::after {
+    content: "";
+    width: .4rem;
+    height: .4rem;
+    border: solid currentColor;
+    border-width: 0 2px 2px 0;
+    transform: translateY(-2px) rotate(45deg);
+  }
 
-  #main-nav[data-open="true"] {
+  .menu-toggle[aria-expanded="true"]::after {
+    transform: translateY(2px) rotate(225deg);
+  }
+
+  #main-menu { display: none; }
+
+  #main-menu[data-open="true"] {
     display: grid;
-    grid-column: 1 / -1;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
-    gap: .4rem;
+    position: absolute;
+    z-index: 2;
+    inset-block-start: calc(100% + .25rem);
+    inset-inline-end: .75rem;
+    width: var(--menu-width);
+    max-height: calc(100dvh - 5rem);
+    overflow-y: auto;
+    padding: .25rem;
+    border-radius: .5rem;
+    background: #075c43;
+    box-shadow: 0 6px 16px #192e3540;
   }
 
-  #main-nav[data-open="true"] + .logout-button {
-    display: block;
-    grid-column: 1 / -1;
+  #main-nav { display: grid; grid-template-columns: minmax(0, 1fr); font-size: .875rem; }
+  #main-nav a { justify-content: flex-start; padding-inline: .65rem; }
+
+  .logout-button {
+    grid-column: auto;
+    grid-row: auto;
+    width: 100%;
+    margin-top: .25rem;
+    font-size: .875rem;
   }
 }
 
 /* Tombol aksi mudah dijangkau di HP */
 @media (max-width: 36rem) {
+  main { font-size: .9375rem; line-height: 1.45; }
+  h1 { font-size: 1.35rem; }
+  h2 { font-size: 1.15rem; }
+  h3 { font-size: 1rem; }
+  h1, h2, h3 { line-height: 1.25; margin-block: .65em .4em; }
+  p, dl, nav { margin-block: .5rem; }
+  dd { margin-inline-start: .75rem; }
+  label, [role="alert"], [role="status"], table { font-size: .875rem; }
+  label.check { min-height: 2.75rem; }
+  label.check input { width: 1.125rem; height: 1.125rem; margin: 0; }
+  input:not([type="checkbox"]), select, textarea { font-size: 1rem; }
+  textarea { min-height: 7rem; }
+  th, td { min-width: 5.25rem; padding: .4rem .5rem; }
+
+  .user-actions-toggle { gap: .4rem; padding-inline: .55rem; }
+  .user-action-options { --action-width: min(11rem, calc(100% - 1rem)); }
+  .user-action-options button { font-size: .875rem; padding-inline: .5rem; }
+
   .actions {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -260,7 +363,6 @@ dd {
     justify-content: center;
   }
 
-  section form, td form {
-    padding: .6rem;
-  }
+  section, form { padding: .625rem; }
+  form { gap: .55rem; }
 }
