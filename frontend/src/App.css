@@ -8,9 +8,8 @@
 * { box-sizing: border-box; }
 body { margin: 0; }
 header, main { max-width: 78rem; margin: auto; padding: 1rem 1.5rem; }
-header { border-bottom: 1px solid #cad7d4; }
 
-.brand { font-size: 1.45rem; font-weight: 750; }
+.brand { color: white; font-size: 1.45rem; font-weight: 750; text-decoration: none; }
 a { color: #075c58; text-underline-offset: .16em; }
 nav, .actions { display: flex; flex-wrap: wrap; gap: .65rem 1rem; align-items: center; }
 nav { margin-block: .75rem; }
@@ -49,6 +48,23 @@ button {
 }
 button:disabled { opacity: .6; }
 
+@media (hover: hover) and (pointer: fine) {
+  button:not(:disabled):hover, .user-actions > summary:hover {
+    transform: translateY(-2px) scale(1.04);
+    box-shadow: 0 4px 10px #192e3533;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  button, .user-actions > summary {
+    transition: transform .15s ease-out, box-shadow .15s ease-out;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button:not(:disabled):hover, .user-actions > summary:hover { transform: none; }
+}
+
 :focus-visible { outline: 3px solid #a85604; outline-offset: 2px; }
 .table-scroll { width: 100%; max-width: 100%; overflow-x: auto; margin-block: 1rem; }
 table { border-collapse: collapse; width: 100%; background: white; }
@@ -56,6 +72,34 @@ table { border-collapse: collapse; width: 100%; background: white; }
 th, td { padding: .65rem; border-bottom: 1px solid #d6e1de; text-align: left; }
 td { vertical-align: top; overflow-wrap: anywhere; }
 td form, td details { min-width: 11rem; }
+
+.user-actions { min-width: 0; }
+.user-actions > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: .55rem;
+  width: fit-content;
+  padding: .45rem .85rem;
+  border: 1px solid #176660;
+  border-radius: .35rem;
+  background: #12645e;
+  color: white;
+}
+.user-actions > summary::-webkit-details-marker { display: none; }
+.user-actions > summary::after {
+  content: "";
+  width: .45em;
+  height: .45em;
+  border: solid currentColor;
+  border-width: 0 2px 2px 0;
+  transform: translateY(-.12em) rotate(45deg);
+}
+.user-actions[open] > summary::after {
+  transform: translateY(.12em) rotate(225deg);
+}
+.user-action-options { display: grid; gap: 8px; margin-top: 8px; }
+.user-action-options form { margin: 0; }
+.user-action-options > button { background: #565656; border-color: #565656; }
 
 [role="alert"] { color: #96251e; overflow-wrap: anywhere; }
 [role="status"] { overflow-wrap: anywhere; }
@@ -73,11 +117,46 @@ header, main {
 }
 
 header {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
   gap: .75rem;
+  width: calc(100% - 1.5rem);
+  margin-top: .75rem;
+  padding-block: .75rem;
+  border-radius: .75rem;
+  background: #075c43;
+}
+
+header :focus-visible { outline-color: #ffdb9b; }
+
+.brand { justify-self: start; }
+
+#main-nav {
+  justify-content: center;
+  gap: .45rem clamp(.35rem, .95vw, .85rem);
+  margin: 0;
+}
+
+#main-nav a {
+  justify-content: center;
+  padding: .4rem .55rem;
+  border-radius: .35rem;
+  color: white;
+  font-weight: 550;
+  text-decoration: none;
+}
+
+#main-nav a:hover, #main-nav a:focus-visible {
+  background: #ffffff26;
+  text-decoration: underline;
+}
+
+.logout-button {
+  justify-self: end;
+  color: #781c2e;
+  background: #ffe3df;
+  border-color: #ffe3df;
 }
 
 .menu-toggle {
@@ -145,24 +224,26 @@ dd {
 
 /* Navigasi buat tablet, HP */
 @media (max-width: 56rem) {
+  header { grid-template-columns: 1fr auto; }
+
   .menu-toggle {
     display: inline-flex;
     align-items: center;
+    border-color: #ffffff80;
   }
 
-  #main-nav {
-    display: none;
-    flex-basis: 100%;
-  }
+  #main-nav, .logout-button { display: none; }
 
   #main-nav[data-open="true"] {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
     gap: .4rem;
   }
 
-  #main-nav a, #main-nav button {
-    padding: .55rem .7rem;
+  #main-nav[data-open="true"] + .logout-button {
+    display: block;
+    grid-column: 1 / -1;
   }
 }
 

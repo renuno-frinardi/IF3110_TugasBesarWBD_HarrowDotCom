@@ -1,4 +1,4 @@
-import React from "react";
+import { useState } from "react";
 import { api } from "./api";
 import { Action, Field, Form, Table, link } from "./ui";
 
@@ -22,7 +22,7 @@ export function Workspace({ path, params, data: d, session, run, post }) {
   if (path === "/" || path === "/connections") {
     const dashboard = path === "/";
     return <>
-      <h1>{dashboard ? "Dashboard" : "Koneksi PostgreSQL"}</h1>
+      <h1>{dashboard ? <span>Dashboard - Welcome, {session.username}</span> : "Koneksi PostgreSQL"}</h1>
       {dashboard && <p>
         Koneksi yang dapat diakses: {d.stats?.Connections}.
         {admin && ` Users: ${d.stats?.Users}. Groups: ${d.stats?.Groups}.`}
@@ -119,22 +119,7 @@ export function Workspace({ path, params, data: d, session, run, post }) {
         ["Groups", u => u.Groups?.join(", ") || "—"],
         ["Status", u => u.IsActive ? "Aktif" : "Nonaktif"],
         ["Role", u => u.IsAdmin ? "Admin" : "User"],
-        ["Aksi", u => <>
-          <Action onClick={() => post("/users/toggle-active",
-            { user_id: u.ID, is_active: String(!u.IsActive) })}>
-            {u.IsActive ? "Nonaktifkan" : "Aktifkan"}
-          </Action>
-          <Action confirmText={`Ubah role ${u.Username}?`}
-            onClick={() => post("/users/toggle-admin",
-              { user_id: u.ID, is_admin: String(!u.IsAdmin) })}>
-            {u.IsAdmin ? "Cabut admin" : "Jadikan admin"}
-          </Action>
-          <Form button="Reset password"
-            onSave={v => post("/users/reset-password", { ...v, user_id: u.ID })}>
-            <Field name="new_password" label="Password baru"
-              type="password" minLength="8" required />
-          </Form>
-        </>],
+        ["Aksi", user => <UserActions user={user} post={post} />],
       ]} />
     </>;
   }
@@ -213,6 +198,40 @@ export function Workspace({ path, params, data: d, session, run, post }) {
   }
 
   return <p>Halaman tidak ditemukan.</p>;
+}
+
+function UserActions({ user, post }) {
+  const [showReset, setShowReset] = useState(false);
+
+  return (
+    <details className="user-actions" onToggle={event => {
+      if (!event.currentTarget.open) setShowReset(false);
+    }}>
+      <summary aria-label={`Kelola ${user.Username}`}>Kelola</summary>
+      <div className="user-action-options">
+        <Action onClick={() => post("/users/toggle-active",
+          { user_id: user.ID, is_active: String(!user.IsActive) })}>
+          {user.IsActive ? "Nonaktifkan akun" : "Aktifkan akun"}
+        </Action>
+        <Action confirmText={`Ubah role ${user.Username}?`}
+          onClick={() => post("/users/toggle-admin",
+            { user_id: user.ID, is_admin: String(!user.IsAdmin) })}>
+          {user.IsAdmin ? "Cabut hak admin" : "Jadikan admin"}
+        </Action>
+        <button type="button" aria-expanded={showReset}
+          onClick={() => setShowReset(open => !open)}>
+          Reset password
+        </button>
+        {showReset && (
+          <Form button="Simpan password"
+            onSave={values => post("/users/reset-password", { ...values, user_id: user.ID })}>
+            <Field name="new_password" label="Password baru"
+              type="password" minLength="8" autoComplete="new-password" required />
+          </Form>
+        )}
+      </div>
+    </details>
+  );
 }
 
 function Explorer({ d, id, post }) {

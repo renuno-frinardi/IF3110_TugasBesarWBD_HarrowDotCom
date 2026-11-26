@@ -134,7 +134,7 @@ export default function App() {
             <button
               type="button"
               className="menu-toggle"
-              aria-controls="main-nav"
+              aria-controls="main-nav main-logout"
               aria-expanded={menuOpen}
               onClick={() => setMenuOpen(open => !open)}
             >
@@ -151,29 +151,31 @@ export default function App() {
             >
               <a href={link("/")}>Dashboard</a>
               <a href={link("/connections")}>Koneksi</a>
-              <a href={link("/reviews")}>Review saya</a>
+              <a href={link("/reviews")}>Review Saya</a>
 
               {session.is_admin && (
                 <>
                   <a href={link("/users")}>Users</a>
                   <a href={link("/groups")}>Groups</a>
                   <a href={link("/access")}>Akses</a>
-                  <a href={link("/audit-logs")}>Audit M1</a>
+                  <a href={link("/audit-logs")}>Audit Logs</a>
                 </>
               )}
-
-              <button
-                disabled={busy}
-                onClick={() => run(async () => {
-                  await api("/logout", { method: "POST", form: {} });
-                  setSession(null);
-                  setCSRF("");
-                  return { navigate: "/login" };
-                })}
-              >
-                Keluar · {session.username}
-              </button>
             </nav>
+            <button
+              type="button"
+              id="main-logout"
+              className="logout-button"
+              disabled={busy}
+              onClick={() => run(async () => {
+                await api("/logout", { method: "POST", form: {} });
+                setSession(null);
+                setCSRF("");
+                return { navigate: "/login" };
+              })}
+            >
+              Keluar
+            </button>
           </>
         )}
       </header>
