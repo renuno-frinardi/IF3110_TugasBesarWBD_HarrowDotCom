@@ -64,6 +64,30 @@ func validateBatchSQL(mode string, upSQL, downSQL string) error {
 	return nil
 }
 
+func validateWorkflowSQL(mode, upSQL, downSQL string, cfg BatchConfig) error {
+	validate := func(query string) error {
+		if strings.EqualFold(strings.TrimSpace(mode), ModeBatch) {
+			replacer := strings.NewReplacer(
+				"{{batch_column}}", `"`+cfg.Column+`"`,
+				"{{last_id}}", "0",
+				"{{batch_size}}", fmt.Sprint(cfg.Size),
+				"{{range_from}}", "1",
+				"{{range_to}}", fmt.Sprint(cfg.Size),
+			)
+			query = replacer.Replace(query)
+		}
+		return validateSQL(query)
+	}
+
+	if err := validate(upSQL); err != nil {
+		return err
+	}
+	if strings.TrimSpace(downSQL) != "" {
+		return validate(downSQL)
+	}
+	return nil
+}
+
 func revisionHash(upSQL, downSQL string, irreversible bool, reason, mode string, cfg BatchConfig) string {
 	cfgBytes, _ := json.Marshal(cfg)
 	sum := sha256.Sum256([]byte(strings.Join([]string{upSQL, downSQL, fmt.Sprintf("%t", irreversible), reason, mode, string(cfgBytes)}, "\x00")))
