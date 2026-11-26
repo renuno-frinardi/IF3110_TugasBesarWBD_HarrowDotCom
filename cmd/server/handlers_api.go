@@ -659,6 +659,9 @@ func (app *application) jobDetailHandler(w http.ResponseWriter, r *http.Request)
 		"mode":              e.Mode,
 		"attempt":           e.Attempt,
 		"batches":           batches,
+		"created_at":        e.CreatedAt,
+		"started_at":        e.StartedAt,
+		"finished_at":       e.FinishedAt,
 	}
 	if errText != "" {
 		// Gunakan error_message (bukan "error") karena api.js menganggap field "error" sebagai kegagalan HTTP.
