@@ -200,7 +200,7 @@ Frontend akan berjalan di `http://localhost:5173` (default Vite dev server).
 > ```bash
 > docker compose up -d frontend
 > ```
-> Frontend akan tersedia di `http://localhost:3000`
+> Frontend akan tersedia di `http://localhost:5173` secara default (atau menyesuaikan dengan `FRONTEND_PORT`).
 
 ### 8. Akses Aplikasi di Browser
 
@@ -211,7 +211,7 @@ Buka web browser dan akses:
 - API Server: [http://localhost:8080](http://localhost:8080)
 
 **Production Mode (Docker):**
-- Frontend: [http://localhost:3000](http://localhost:3000)
+- Frontend: [http://localhost:5173](http://localhost:5173)
 - API Server: [http://localhost:8080](http://localhost:8080)
 
 Login menggunakan akun admin yang telah dibuat di langkah 4.
