@@ -95,14 +95,14 @@ th, td { padding: .65rem; border-bottom: 1px solid #d6e1de; text-align: left; }
 td { vertical-align: top; overflow-wrap: anywhere; }
 td form, td details { min-width: 11rem; }
 
-.user-actions-toggle {
+.action-dropdown-toggle {
   display: inline-flex;
   align-items: center;
   gap: .55rem;
   max-width: none;
   white-space: nowrap;
 }
-.user-actions-toggle::after {
+.action-dropdown-toggle::after {
   content: "";
   width: .45em;
   height: .45em;
@@ -111,10 +111,10 @@ td form, td details { min-width: 11rem; }
   border-width: 0 2px 2px 0;
   transform: translateY(-.12em) rotate(45deg);
 }
-.user-actions-toggle:has(+ :popover-open)::after {
+.action-dropdown-toggle:has(+ :popover-open)::after {
   transform: translateY(.12em) rotate(225deg);
 }
-.user-action-options {
+.action-dropdown {
   --action-width: min(12rem, calc(100% - 1rem));
   position: absolute;
   inset: auto;
@@ -129,12 +129,14 @@ td form, td details { min-width: 11rem; }
   color: inherit;
   box-shadow: 0 6px 16px #192e3540;
 }
-.user-action-options:popover-open { display: grid; gap: .5rem; }
-.user-action-options:popover-open:not([data-positioned]) { visibility: hidden; }
-.user-action-options form { min-width: 0; margin: 0; padding: .5rem; }
-.user-action-options button { width: 100%; }
+.action-dropdown:popover-open { display: grid; gap: .5rem; }
+.action-dropdown:popover-open:not([data-positioned]) { visibility: hidden; }
+.action-dropdown form { min-width: 0; margin: 0; padding: .5rem; }
+.action-dropdown button { width: 100%; }
 .user-action-options > button { background: #565656; border-color: #565656; }
-main:has(.user-action-options[data-needs-room]:popover-open)::after {
+.explorer-row-actions { --action-width: min(19rem, calc(100% - 1rem)); }
+.explorer-row-actions .delete-row { background: #a12c40; border-color: #a12c40; }
+main:has(.action-dropdown[data-needs-room]:popover-open)::after {
   content: "";
   display: block;
   height: min(12rem, 50dvh);
@@ -143,6 +145,26 @@ main:has(.user-action-options[data-needs-room]:popover-open)::after {
 [role="alert"] { color: #96251e; overflow-wrap: anywhere; }
 [role="status"] { overflow-wrap: anywhere; }
 .job-id { color: #4a6269; font-size: .875rem; }
+
+.group-members { max-width: 48rem; padding: 0; list-style: none; }
+.group-members li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: .75rem;
+}
+.remove-member {
+  padding: 0 .25rem;
+  border: 0;
+  background: transparent;
+  color: #96251e;
+  font-size: .875rem;
+}
+.remove-member:not(:disabled):hover {
+  transform: none;
+  box-shadow: none;
+  text-decoration: underline;
+}
 
 header, main {
   padding-inline: clamp(.75rem, 3vw, 2rem);
@@ -257,13 +279,6 @@ dd {
   .table-scroll { margin-block: .75rem; }
   th, td { padding: .5rem; }
 
-  .explorer-row-actions {
-    width: 13rem;
-    min-width: 0;
-    max-width: 70vw;
-  }
-
-  .explorer-row-actions form { min-width: 0; }
 }
 
 @media (min-width: 47rem) and (max-width: 56rem) {
@@ -348,7 +363,7 @@ dd {
   textarea { min-height: 7rem; }
   th, td { min-width: 5.25rem; padding: .4rem .5rem; }
 
-  .user-actions-toggle { gap: .4rem; padding-inline: .55rem; }
+  .action-dropdown-toggle { gap: .4rem; padding-inline: .55rem; }
   .user-action-options { --action-width: min(11rem, calc(100% - 1rem)); }
   .user-action-options button { font-size: .875rem; padding-inline: .5rem; }
 

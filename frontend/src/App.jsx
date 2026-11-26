@@ -91,7 +91,7 @@ export default function App() {
     return () => controller.abort();
   }, [route, refresh, publicPage, expire]);
 
-  async function run(operation) {
+  async function run(operation, onError = setError) {
     if (submitting.current) return;
     submitting.current = true;
     setBusy(true);
@@ -111,7 +111,7 @@ export default function App() {
       }
     } catch (e) {
       if (e.status === 401 && !publicPage) expire();
-      else if (currentRoute() === start) setError(e.message);
+      else if (currentRoute() === start) onError(e.message);
     } finally {
       submitting.current = false;
       setBusy(false);

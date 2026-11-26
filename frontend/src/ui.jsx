@@ -63,9 +63,9 @@ export function Table({ rows = [], columns }) {
   );
 }
 
-export function Action({ children, onClick, confirmText }) {
+export function Action({ children, onClick, confirmText, className }) {
   return (
-    <button type="button" onClick={() => {
+    <button type="button" className={className} onClick={() => {
       if (!confirmText || window.confirm(confirmText)) onClick();
     }}>
       {children}
