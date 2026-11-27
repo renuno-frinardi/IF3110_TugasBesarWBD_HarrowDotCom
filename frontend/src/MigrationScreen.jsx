@@ -208,6 +208,19 @@ function Draft({ db, migration: m, run }) {
   </>;
 }
 
+const jobStatus = {
+  pending: ["Dalam antrean", "waiting"],
+  running: ["Sedang berjalan", "running"],
+  success: ["Berhasil", "success"],
+  failed: ["Gagal", "failed"],
+  partial: ["Selesai sebagian", "waiting"],
+  partially_reverted: ["Dibatalkan sebagian", "waiting"],
+};
+
+const jobMode = { normal: "Normal", single: "Normal", batch: "Batch" };
+const jobAction = { up: "Terapkan migration", down: "Rollback", forward: "Forward" };
+const jobNumber = new Intl.NumberFormat("id-ID");
+
 function Job({ id, initial, run, expire }) {
   const [job, setJob] = useState(initial);
   const [pollError, setPollError] = useState("");
@@ -253,31 +266,66 @@ function Job({ id, initial, run, expire }) {
     });
   }
 
-  return <>
-    <h1>Detail job</h1>
-    <p className="job-id">ID job <code>{id}</code></p>
-    <p role="status">Status: <strong>{job.status}</strong></p>
-    {job.mode === "batch" && <dl>
-      <dt>Batch committed</dt><dd>{job.committed_batches ?? 0}</dd>
-      <dt>Row committed</dt><dd>{job.committed_rows ?? 0}</dd>
-      <dt>Cursor terakhir</dt><dd>{job.checkpoint?.cursor ?? "—"}</dd>
-    </dl>}
-    {(job.error_message || job.error) && <p role="alert">{job.error_message || job.error}</p>}
-    {pollError && <p role="alert">{pollError}{" "}
-      <Action onClick={() => setRetry(n => n + 1)}>Coba pantau lagi</Action>
-    </p>}
-    <div className="actions">
-      {job.allowed_actions?.includes("resume") && (
-        <Action onClick={() => recover("resume")}>Lanjutkan dari checkpoint</Action>
-      )}
-      {job.allowed_actions?.includes("cancel-batches") && (
-        <Action confirmText="Ajukan pembatalan batch yang sudah committed?"
-          onClick={() => recover("cancel-batches")}>Batalkan batch committed</Action>
-      )}
-    </div>
-    <nav>
-      <a className="button-link" href={link("/migration", { id: job.migration_id })}>Detail migration</a>
-      <a className="button-link" href={link("/history", { db: job.database_id })}>Lihat history</a>
+  const [statusLabel, tone] = jobStatus[job.status] || [job.status, "waiting"];
+  const batchMode = job.mode === "batch";
+  const canResume = job.allowed_actions?.includes("resume");
+  const canCancel = job.allowed_actions?.includes("cancel-batches");
+  const executionError = job.error_message || job.error;
+
+  return <div className="job-page">
+    <nav className="job-nav" aria-label="Navigasi detail job">
+      <a href={link("/migration", { id: job.migration_id })}>← Detail migration</a>
+      <a href={link("/history", { db: job.database_id })}>Lihat history →</a>
     </nav>
-  </>;
+    <section className="job-hero">
+      <div className="job-hero-heading">
+        <h1>Detail job</h1>
+        <span className={`job-status job-status--${tone}`} role="status">
+          {statusLabel}
+        </span>
+      </div>
+      <p className="job-id"><span>ID job</span> <code>{job.job_id || id}</code></p>
+      <dl className="job-metrics" aria-label="Hasil eksekusi">
+        <div>
+          <dt>Batch committed</dt>
+          <dd>{batchMode ? jobNumber.format(job.committed_batches ?? 0) : "—"}</dd>
+        </div>
+        <div>
+          <dt>Row committed</dt><dd>{jobNumber.format(job.committed_rows ?? 0)}</dd>
+        </div>
+        <div>
+          <dt>Cursor terakhir</dt>
+          <dd className="job-cursor">{batchMode ? (job.checkpoint?.cursor ?? "—") : "—"}</dd>
+        </div>
+      </dl>
+    </section>
+
+    {(executionError || pollError || canResume || canCancel) && (
+      <section className="job-panel job-recovery">
+        <h2>{pollError && !executionError ? "Pemantauan job" : "Tindakan pemulihan"}</h2>
+        {executionError && <p role="alert">{executionError}</p>}
+        {pollError && <p role="alert">{pollError}</p>}
+        <div className="actions">
+          {pollError && <Action className="secondary-button" onClick={() => setRetry(n => n + 1)}>
+            Coba pantau lagi
+          </Action>}
+          {canResume && <Action onClick={() => recover("resume")}>
+            Lanjutkan dari checkpoint
+          </Action>}
+          {canCancel && <Action className="danger-button"
+            confirmText="Ajukan pembatalan batch yang sudah committed?"
+            onClick={() => recover("cancel-batches")}>Batalkan batch committed</Action>}
+        </div>
+      </section>
+    )}
+
+    <section className="job-panel">
+      <h2>Informasi job</h2>
+      <dl className="job-info">
+        <div><dt>Mode</dt><dd>{jobMode[job.mode] ?? job.mode ?? "—"}</dd></div>
+        <div><dt>Aksi</dt><dd>{jobAction[job.action] ?? job.action ?? "—"}</dd></div>
+        <div><dt>Percobaan</dt><dd>{job.attempt ?? "—"}</dd></div>
+      </dl>
+    </section>
+  </div>;
 }
