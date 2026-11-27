@@ -285,7 +285,7 @@ cd frontend && npm install && npm run dev
 ### Audit Logs
 ![Halaman audit logs](assets/audit_logs.png)
 
-## Pengujian Beban dengan k6
+## k6 load testing
 
 k6 adalah alat *load testing* yang mensimulasikan banyak pengguna virtual (*virtual users/VUs*) untuk melihat respons aplikasi saat menerima beban. Pada proyek ini, [`test/k6/stress.js`](test/k6/stress.js) menguji alur migrasi asinkron: login, mengambil daftar migrasi, mengajukan migrasi yang sudah disetujui, lalu memantau status job sampai selesai.
 
