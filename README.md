@@ -1,4 +1,4 @@
-# HarrowDotCom
+# HarrowDotCom - Milestone 2 Tugas Besar IF3110
 
 **Kode Kelompok: K02-11**
 
