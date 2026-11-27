@@ -15,14 +15,6 @@ import (
 
 func TestJSONLoggerRedactionAndContextEnrichment(t *testing.T) {
 	var logBuf bytes.Buffer
-	var traceBuf bytes.Buffer
-
-	t.Setenv("OTEL_EXPORTER", "stdout")
-	shutdown, err := InitTracing(context.Background(), "harrow-test", &traceBuf)
-	if err != nil {
-		t.Fatalf("InitTracing failed: %v", err)
-	}
-	defer func() { _ = shutdown(context.Background()) }()
 
 	logger := NewJSONLogger(&logBuf, slog.LevelDebug)
 
@@ -31,22 +23,8 @@ func TestJSONLoggerRedactionAndContextEnrichment(t *testing.T) {
 	ctx = WithActorID(ctx, 42)
 	ctx = WithDatabaseID(ctx, 7)
 
-	ctx, apiSpan := Tracer("api").Start(ctx, "api.execute")
-	encodedTrace := InjectTraceContext(ctx)
-	apiSpan.End()
-
-	if encodedTrace == "" {
-		t.Fatal("expected non-empty serialized trace context")
-	}
-
-	workerCtx := ExtractTraceContext(context.Background(), encodedTrace)
-	workerCtx = WithCorrelationID(workerCtx, "corr-abc-123")
-	workerCtx = WithActorID(workerCtx, 42)
-	workerCtx = WithDatabaseID(workerCtx, 7)
-	workerCtx, workerSpan := Tracer("worker").Start(workerCtx, "worker.process_job")
-
 	secretSession := strings.Repeat("ab", 32)
-	logger.InfoContext(workerCtx, "worker.job.started",
+	logger.InfoContext(ctx, "worker.job.started",
 		slog.String("status", "running"),
 		slog.String("job_id", "0123456789abcdef0123456789abcdef"),
 		slog.String("password", "super-secret-db-pass"),
@@ -54,7 +32,6 @@ func TestJSONLoggerRedactionAndContextEnrichment(t *testing.T) {
 		slog.String("dsn_info", "postgresql://harrow:mySecretPass123@localhost:5433/harrow_db"),
 		slog.String("note", "cookie harrow_session=tok12345 and token=xyz987"),
 	)
-	workerSpan.End()
 
 	rawLog := logBuf.String()
 	for _, leaked := range []string{"super-secret-db-pass", "mySecretPass123", secretSession, "tok12345", "xyz987"} {
@@ -68,7 +45,7 @@ func TestJSONLoggerRedactionAndContextEnrichment(t *testing.T) {
 		t.Fatalf("expected valid JSON log line, got %v: %s", err, rawLog)
 	}
 
-	for _, key := range []string{"time", "level", "event", "actor", "database", "status", "correlation_id", "trace_id", "span_id", "job_id"} {
+	for _, key := range []string{"time", "level", "event", "actor", "database", "status", "correlation_id", "job_id"} {
 		if _, ok := parsed[key]; !ok {
 			t.Errorf("missing required JSON log attribute %q in %v", key, parsed)
 		}
@@ -82,12 +59,6 @@ func TestJSONLoggerRedactionAndContextEnrichment(t *testing.T) {
 	}
 	if parsed["job_id"] != "0123456789abcdef0123456789abcdef" {
 		t.Errorf("job_id should not be redacted, got %v", parsed["job_id"])
-	}
-	if parsed["trace_id"] != apiSpan.SpanContext().TraceID().String() {
-		t.Errorf("expected worker trace_id %s to match API trace_id %s", parsed["trace_id"], apiSpan.SpanContext().TraceID().String())
-	}
-	if traceBuf.Len() == 0 {
-		t.Error("expected spans to be exported to stdout exporter buffer")
 	}
 }
 

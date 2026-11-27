@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
-	"go.opentelemetry.io/otel/trace"
 )
 
 func NewJSONLogger(w io.Writer, level slog.Level) *slog.Logger {
@@ -67,15 +66,6 @@ func (h *contextHandler) Handle(ctx context.Context, r slog.Record) error {
 		if !present["database"] {
 			if db := DatabaseFromContext(ctx); db != "" {
 				cleaned.AddAttrs(slog.String("database", db))
-			}
-		}
-		sc := trace.SpanContextFromContext(ctx)
-		if sc.IsValid() {
-			if !present["trace_id"] {
-				cleaned.AddAttrs(slog.String("trace_id", sc.TraceID().String()))
-			}
-			if !present["span_id"] {
-				cleaned.AddAttrs(slog.String("span_id", sc.SpanID().String()))
 			}
 		}
 	}
