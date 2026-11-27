@@ -2,9 +2,9 @@
 
 **Kode Kelompok: K02-11**
 
-Tugas besar IF3110 Pengembangan Aplikasi Web.
+**HarrowDotCom** adalah platform manajemen koneksi database, eksplorasi skema/data (*Database Explorer*), analisis rencana eksekusi query (`EXPLAIN` / `EXPLAIN ANALYZE`), serta manajemen dan eksekusi migrasi SQL sinkron maupun asinkron (*normal* & *cursor-based batch mode*) yang dikembangkan untuk Tugas Besar **IF3110 Pengembangan Aplikasi Web**.
 
-## Anggota Kelompok
+### Anggota Kelompok
 
 | NIM | Nama Lengkap |
 | --- | --- |
@@ -12,327 +12,261 @@ Tugas besar IF3110 Pengembangan Aplikasi Web.
 | 13524080 | Renuno Yuqa Frinardi |
 | 13524104 | Valentino Daniel Kusumo |
 
+---
+
 ## Struktur Folder
 
 ```text
 .
+├── .github/workflows/
+│   └── codeql.yml            # Workflow GitHub Actions untuk analisis statis (SAST) CodeQL.
+├── assets/                   # Aset gambar dokumentasi.
 ├── cmd/
-│   ├── server/               # Menjalankan server, mengatur route, middleware, dan handler HTTP.
-│   ├── worker/               # Binary worker terpisah untuk memproses antrean migration async.
-│   ├── bench-migration/      # Alat benchmark mode normal vs batch pada dataset besar.
-│   └── seed-admin/           # Program untuk membuat atau memperbarui akun Platform Admin.
+│   ├── server/               # HTTP API server, routing, middleware, dan autentikasi/otorisasi.
+│   ├── worker/               # Worker asinkron pemroses antrean job migrasi & rollback batch.
+│   ├── seed-admin/           # CLI pembuatan/pembaruan akun Platform Admin awal.
+│   ├── seed-target-db/       # CLI verifikasi & registrasi otomatis koneksi database commerce-db.
+│   └── bench-migration/      # Alat benchmark eksekusi migrasi mode normal vs batch.
+├── docs/
+│   └── codeql.md             # Dokumentasi cakupan dan bukti hasil pemindaian CodeQL.
+├── frontend/                 # Single Page Application React + Vite (dan konfigurasi Nginx).
 ├── internal/
-│   ├── admin/                # Pengelolaan user, group, pemberian akses, dan audit log.
-│   ├── async/                # Async engine: antrean PostgreSQL, lease lock, executor batch, worker.
-│   ├── auth/                 # Login, password, session, dan perlindungan CSRF.
-│   ├── authz/                # Pemeriksaan hak akses berdasarkan keanggotaan group.
-│   ├── explain/              # Menjalankan dan membaca hasil EXPLAIN/ANALYZE.
-│   ├── migration/            # Draft SQL, validasi, eksekusi, transaksi, dan riwayat migration.
-│   ├── store/                # Akses database, konfigurasi koneksi, enkripsi, dan database viewer.
-│   │   ├── migrations/       # SQL untuk menyiapkan tabel internal aplikasi di PostgreSQL.
-│   │   └── migrations-mariadb/ # SQL untuk membuat tabel internal aplikasi dalam format MariaDB.
-│   ├── telemetry/            # Structured JSON logger, OpenTelemetry tracing, dan redaksi data sensitif.
-│   └── web/
-│       ├── templates.go      # Registrasi dan pemuatan template aplikasi.
-│       ├── templates/        # Halaman aplikasi menggunakan Go template.
-│       └── static/           # File CSS untuk tampilan aplikasi.
-├── frontend/                 # Single Page Application React (MigrationScreen, API polling).
-├── docs/                     # Dokumentasi desain (async-engine-observability.md).
-├── scripts/                  # Script SQL benchmark dataset (generate_series > 1 detik).
-├── test/                     # Pengujian terpisah dari package implementasi.
-│   ├── async/                # Integration test async engine (lock, resume, revert, duplikat).
-│   ├── auth/                 # Pengujian autentikasi dan redaksi data sensitif.
-│   ├── authz/                # Pengujian permission dan otorisasi.
-│   ├── explain/              # Pengujian fitur EXPLAIN/ANALYZE.
-│   ├── migration/            # Pengujian validasi, service, store, dan eksekusi migration.
-│   └── store/                # Pengujian koneksi dan query database.
-├── assets/                   # Aset dokumentasi, termasuk gambar ERD.
-├── Dockerfile                # Multi-stage build untuk binary server dan worker.
-├── frontend/Dockerfile       # Build SPA React + nginx.
-├── .env.example             # Contoh konfigurasi environment.
-├── docker-compose.yml       # Konfigurasi container postgres, server, worker, frontend.
-├── go.mod                   # Nama module, versi Go, dan dependency proyek.
-├── go.sum                   # Checksum dependency Go.
-└── README.md                # Informasi proyek dan cara menjalankannya.
+│   ├── admin/                # Pengelolaan user, group, hak akses database, dan audit log.
+│   ├── async/                # Async engine: antrean PostgreSQL, lease lock, retry, batch executor.
+│   ├── auth/                 # Login, hashing password, manajemen sesi, dan proteksi CSRF.
+│   ├── authz/                # Otorisasi berbasis role dan keanggotaan group.
+│   ├── explain/              # Eksekusi dan pembacaan hasil EXPLAIN / EXPLAIN ANALYZE.
+│   ├── migration/            # Validasi SQL, workflow approval, revisi, dan eksekusi migrasi.
+│   ├── store/                # Koneksi database, enkripsi AES-GCM, migrasi internal, dan explorer.
+│   ├── telemetry/            # Structured JSON logger, OpenTelemetry tracing, dan redaksi rahasia.
+│   └── web/                  # Template halaman dan aset statis web.
+├── scripts/
+│   ├── benchmark_dataset.sql # Script dataset benchmark ledger sederhana.
+│   └── commerce-db/          # Automatic seeding DDL/DML (~1,6 juta baris) & contoh query beban.
+├── test/                     # Unit test, integration test per modul, dan stress test k6.
+├── Dockerfile                # Multi-stage build untuk binary server, worker, dan seeder.
+├── docker-compose.yml        # Orkestrasi container postgres, commerce-db, server, worker, frontend.
+├── .env.example              # Contoh konfigurasi variabel environment terpusat.
+└── README.md                 # Dokumentasi utama proyek.
 ```
 
-Pengujian berada di folder `test/` dan dikelompokkan berdasarkan fitur yang diuji. File
-`compat.go` pada beberapa subfolder membantu pengujian tetap kompatibel dengan konfigurasi
-database yang digunakan.
+---
 
-## ERD Model Relasional
+## Database Target `commerce_db` (`harrow_commerce`)
 
-ERD berikut menunjukkan model relasional database Harrow:
+Untuk menguji performa query berat, migrasi batch asinkron, dan *load balancing* sistem secara realistis, proyek ini menyediakan container PostgreSQL 18 terpisah bernama **`commerce-db`** (`database: harrow_commerce`). Saat container pertama kali dijalankan, PostgreSQL secara otomatis menjalankan *seeding* melalui `/docker-entrypoint-initdb.d/` (`scripts/commerce-db/initdb/`) dan layanan `commerce-db-init` mendaftarkannya langsung ke HarrowDotCom sebagai koneksi **`Commerce LoadTest DB`**.
 
-![ERD Model Relasional](assets/Model_Relasional.png)
+Karakteristik utama dataset (`~1.601.210` baris / `~510 MB`):
+- **4 Schema & 14 Tabel Hybrid (Relasional + `JSONB` + `TEXT[]`)**:
+  - `public`: `regions` (10), `merchants` (2.000), `customers` (50.000), `settlement_batches` (300.000 — siap diuji dengan migrasi *cursor-batch*).
+  - `catalog`: `categories` (120, hierarki 3 level), `warehouses` (60), `products` (25.000), `inventory_levels` (100.000).
+  - `orders`: `orders` (150.000, distribusi *Pareto/skewed*), `order_items` (450.000), `shipments` (120.000).
+  - `finance`: `ledger_accounts` (4.020), `journal_entries` (300.000, *double-entry*), `fraud_signals` (100.000).
+- **Integritas & Indeks**: 24 *Foreign Key* lintas schema, 10 *CHECK constraint*, 13 *UNIQUE constraint*, 26 indeks sekunder (*B-Tree*, *Partial*, *GIN*, *BRIN*), serta 2 *analytical view*.
 
-Relasi utamanya adalah:
+### ERD `commerce_db`
 
-- `users` menyimpan akun pengguna, sedangkan `sessions` menyimpan sesi login yang terkait dengan setiap user.
-- `users` dan `user_groups` terhubung secara many-to-many melalui `user_group_members`.
-- `user_groups` dan `database_connections` juga terhubung secara many-to-many melalui `group_database_access`. Tabel ini menyimpan level akses `View` atau `View + Edit`.
-- Hak akses aplikasi dikelola melalui `roles`, `permissions`, `role_permissions`, dan `user_roles`.
-- `audit_logs` mencatat aktivitas pengguna terhadap resource aplikasi atau koneksi database.
+```mermaid
+erDiagram
+    REGIONS ||--o{ MERCHANTS : "hosts"
+    REGIONS ||--o{ CUSTOMERS : "serves"
+    REGIONS ||--o{ SETTLEMENT_BATCHES : "settles_in"
+    REGIONS ||--o{ WAREHOUSES : "locates"
+    REGIONS ||--o{ ORDERS : "originates"
+
+    MERCHANTS ||--o{ SETTLEMENT_BATCHES : "receives"
+    MERCHANTS ||--o{ PRODUCTS : "sells"
+    MERCHANTS ||--o{ ORDER_ITEMS : "fulfills"
+    MERCHANTS ||--o{ LEDGER_ACCOUNTS : "owns"
+
+    CATEGORIES ||--o{ CATEGORIES : "parent_of"
+    CATEGORIES ||--o{ PRODUCTS : "classifies"
+
+    WAREHOUSES ||--o{ INVENTORY_LEVELS : "stores"
+    WAREHOUSES ||--o{ ORDERS : "dispatches"
+    WAREHOUSES ||--o{ SHIPMENTS : "ships_from"
+
+    PRODUCTS ||--o{ INVENTORY_LEVELS : "stocked_in"
+    PRODUCTS ||--o{ ORDER_ITEMS : "ordered_as"
+
+    CUSTOMERS ||--o{ ORDERS : "places"
+    CUSTOMERS ||--o{ FRAUD_SIGNALS : "evaluated_for"
+
+    ORDERS ||--|{ ORDER_ITEMS : "contains"
+    ORDERS ||--o{ SHIPMENTS : "tracked_by"
+    ORDERS ||--o{ JOURNAL_ENTRIES : "posts"
+    ORDERS ||--o{ FRAUD_SIGNALS : "triggers"
+
+    LEDGER_ACCOUNTS ||--o{ JOURNAL_ENTRIES : "debits"
+    LEDGER_ACCOUNTS ||--o{ JOURNAL_ENTRIES : "credits"
+
+    REGIONS {
+        smallint id PK
+        varchar code UK
+        char currency
+        numeric tax_rate
+    }
+    MERCHANTS {
+        bigint id PK
+        smallint region_id FK
+        varchar merchant_code UK
+        varchar tier
+        jsonb storefront_config
+    }
+    CUSTOMERS {
+        bigint id PK
+        smallint region_id FK
+        uuid external_uuid UK
+        varchar email UK
+        varchar loyalty_tier
+        jsonb preferences
+    }
+    SETTLEMENT_BATCHES {
+        bigint id PK
+        bigint merchant_id FK
+        smallint region_id FK
+        varchar batch_code UK
+        numeric net_amount
+        boolean reconciled
+    }
+    CATEGORIES {
+        int id PK
+        int parent_id FK
+        varchar slug UK
+        smallint depth_level
+    }
+    WAREHOUSES {
+        int id PK
+        smallint region_id FK
+        varchar warehouse_code UK
+        varchar tier
+    }
+    PRODUCTS {
+        bigint id PK
+        bigint merchant_id FK
+        int category_id FK
+        varchar sku UK
+        numeric base_price
+        jsonb specs
+    }
+    INVENTORY_LEVELS {
+        bigint id PK
+        int warehouse_id FK
+        bigint product_id FK
+        int on_hand_qty
+        int reserved_qty
+    }
+    ORDERS {
+        bigint id PK
+        bigint customer_id FK
+        smallint region_id FK
+        int warehouse_id FK
+        varchar order_number UK
+        numeric total_amount
+        timestamptz placed_at
+    }
+    ORDER_ITEMS {
+        bigint id PK
+        bigint order_id FK
+        bigint product_id FK
+        bigint merchant_id FK
+        int quantity
+        numeric line_total
+    }
+    SHIPMENTS {
+        bigint id PK
+        bigint order_id FK
+        int warehouse_id FK
+        varchar tracking_number UK
+        varchar shipment_status
+    }
+    LEDGER_ACCOUNTS {
+        bigint id PK
+        bigint merchant_id FK
+        varchar account_code UK
+        varchar account_type
+        numeric current_balance
+    }
+    JOURNAL_ENTRIES {
+        bigint id PK
+        bigint order_id FK
+        bigint debit_account_id FK
+        bigint credit_account_id FK
+        varchar reference_code UK
+        numeric amount
+    }
+    FRAUD_SIGNALS {
+        bigint id PK
+        bigint order_id FK
+        bigint customer_id FK
+        numeric risk_score
+        varchar verdict
+    }
+```
+
+---
 
 ## Cara Menjalankan
 
-Ikuti langkah-langkah berikut secara berurutan untuk menjalankan aplikasi Harrow hingga UI muncul di web browser.
+### 1. Prasyarat
+- **Docker** & **Docker Compose**
+- **Go** `>= 1.27.3` serta **Node.js** & **npm** *(hanya diperlukan jika menjalankan secara manual di luar Docker)*
 
-### Prasyarat
-
-Pastikan Anda telah menginstall:
-- **Docker** dan **Docker Compose** (untuk menjalankan database PostgreSQL)
-- **Go** versi 1.27.3 atau lebih tinggi
-- **Node.js** dan **npm** (untuk menjalankan frontend React)
-
-### 1. Nyalakan Docker
-
-Buka Docker Desktop atau jalankan Docker Engine, lalu tunggu sampai siap digunakan.
-
-### 2. Siapkan Konfigurasi Environment
-
-Jika belum memiliki file `.env`, salin contoh konfigurasi:
+### 2. Konfigurasi `.env`
+Salin template konfigurasi dan isi `ENCRYPTION_KEY` (32 byte hex) serta password yang diinginkan:
 
 ```bash
 cp .env.example .env
+openssl rand -hex 32   # Salin output ke variabel ENCRYPTION_KEY di dalam .env
 ```
 
-Edit file `.env` dan isi variabel-variabel berikut:
+### 3. Menjalankan dengan Docker (Direkomendasikan)
+Menjalankan database utama (`postgres`), database target + *auto-seeding* (`commerce-db` & `commerce-db-init`), `server`, `worker`, dan `frontend`:
 
 ```bash
-# Database PostgreSQL
-POSTGRES_DB=harrow_db
-POSTGRES_USER=harrow
-POSTGRES_PASSWORD=your_secure_password_here
-POSTGRES_PORT=5433
-
-# Encryption key untuk keamanan data
-ENCRYPTION_KEY=your_encryption_key_here
-
-# Port aplikasi
-APP_PORT=8080
+docker compose up -d --build
+docker compose exec server harrow-server seed-admin
 ```
 
-**Cara membuat `ENCRYPTION_KEY`:**
+Akses aplikasi pada `http://localhost:5173` (atau sesuai `FRONTEND_PORT` di `.env`).
+
+### 4. Menjalankan secara Manual (Development Mode)
+Jalankan container database terlebih dahulu, lalu jalankan layanan aplikasi di terminal terpisah:
 
 ```bash
-openssl rand -hex 32
-```
+# Terminal 1: Jalankan PostgreSQL utama & commerce-db, lalu seed akun admin & koneksi target
+docker compose up -d postgres commerce-db
+go run ./cmd/seed-admin
+go run ./cmd/seed-target-db
 
-Salin hasilnya ke variabel `ENCRYPTION_KEY` di file `.env`.
-
-> **Catatan:** Jika sudah ada `ENCRYPTION_KEY` yang digunakan sebelumnya, gunakan key tersebut agar data koneksi lama tetap dapat dibuka.
-
-### 3. Jalankan Database PostgreSQL
-
-Jalankan container PostgreSQL menggunakan Docker Compose:
-
-```bash
-docker compose up -d postgres
-```
-
-Tunggu hingga database siap (biasanya 5-10 detik). Verifikasi container berjalan:
-
-```bash
-docker compose ps
-```
-
-Anda akan melihat output seperti:
-```
-NAME          IMAGE         STATUS                   PORTS
-harrow-postgres-1   postgres:18   Up (healthy)   0.0.0.0:5433->5432/tcp
-```
-
-### 4. Buat Akun Admin (Penggunaan Pertama Kali)
-
-Jika ini pertama kali menjalankan aplikasi, buat akun admin:
-
-```bash
-go run ./cmd/server seed-admin admin
-```
-
-Sistem akan meminta password untuk akun admin. Masukkan password yang diinginkan lalu tekan Enter.
-
-> **Tips:** Anda juga dapat set password via environment variable:
-> ```bash
-> SEED_ADMIN_PASSWORD=your_password go run ./cmd/server seed-admin admin
-> ```
-
-### 5. Jalankan API Server
-
-Buka terminal baru dan jalankan server:
-
-```bash
+# Terminal 2: Jalankan API Server
 go run ./cmd/server
-```
 
-Server akan dimulai dan menampilkan log:
-```
-2026/11/26 10:30:00 server.started port=8080 status=listening
-```
-
-### 6. Jalankan Worker (Async Migration Processor)
-
-Buka terminal baru lagi dan jalankan worker:
-
-```bash
+# Terminal 3: Jalankan Async Worker
 go run ./cmd/worker
+
+# Terminal 4: Jalankan Frontend Vite
+cd frontend && npm install && npm run dev
 ```
 
-Worker akan dimulai dan menampilkan log:
-```
-{"time":"2026-11-26T10:30:00Z","level":"INFO","event":"worker.started","worker_id":"worker-xxx","concurrency":4,"status":"ready"}
-```
-
-### 7. Jalankan Frontend (Development Mode)
-
-Buka terminal baru, masuk ke folder frontend, dan jalankan:
-
-```bash
-cd frontend
-npm install    # Hanya diperlukan pertama kali
-npm run dev
-```
-
-Frontend akan berjalan di `http://localhost:5173` (default Vite dev server).
-
-> **Alternatif - Mode Production:** Untuk build production dan serve via nginx:
-> ```bash
-> docker compose up -d frontend
-> ```
-> Frontend akan tersedia di `http://localhost:5173` secara default (atau menyesuaikan dengan `FRONTEND_PORT`).
-
-### 8. Akses Aplikasi di Browser
-
-Buka web browser dan akses:
-
-**Development Mode:**
-- Frontend: [http://localhost:5173](http://localhost:5173)
-- API Server: [http://localhost:8080](http://localhost:8080)
-
-**Production Mode (Docker):**
-- Frontend: [http://localhost:5173](http://localhost:5173)
-- API Server: [http://localhost:8080](http://localhost:8080)
-
-Login menggunakan akun admin yang telah dibuat di langkah 4.
-
-### Peran dan Hak Akses
-
-| Peran | Keterangan |
-| --- | --- |
-| **Platform Admin** | Mengelola user, group, koneksi database, dan pemberian akses |
-| **User** | Mengakses database melalui keanggotaan group |
-| **View + Edit** | Melihat schema/data, membuat dan menjalankan migration |
-| **View Only** | Melihat schema/data dan riwayat migration (read-only) |
-
-## Bonus: Stress Testing dengan k6
-
-[Script k6](test/k6/stress.js) menjalankan `GET` daftar migration dan `POST` eksekusi migration secara bersamaan. Setiap VU login, mengambil satu fixture per iterasi, dan polling job yang diterima sampai status terminal. `same_database` memakai satu database PostgreSQL. `different_databases` bergantian memakai dua database PostgreSQL.
-
-Beban normal awal adalah 2 virtual user (VU). Tes naik ke 4 lalu 8 VU, turun ke 4 lalu 2 VU, kemudian berhenti. Setiap tingkat naik dan pemulihan punya fase stabil tersendiri. Default setiap fase 30 detik. Atur `K6_NORMAL_VUS` sesuai beban normal tim dan `K6_STAGE_SECONDS` untuk mengubah durasi per fase.
-
-### Menjalankan pengujian
-
-1. Siapkan lingkungan lokal khusus pengujian. Jalankan server dan worker beserta PostgreSQL. Dari folder `frontend`, jalankan Vite sebagai proxy API.
-
-   ~~~bash
-   docker compose up -d --build postgres server worker
-   cd frontend
-   npm run dev -- --host 127.0.0.1
-   ~~~
-
-2. Tambahkan dua koneksi ke **nama database PostgreSQL berbeda**. Untuk server dan worker di Docker, gunakan host `postgres` dan port `5432` jika database target berada di layanan tersebut. Beri akun uji akses **View + Edit** di kedua koneksi. Dari root repo, ganti `first_db` dan `second_db` dengan ID koneksi uji.
-
-   ~~~bash
-   docker compose cp test/k6/seed.sql postgres:/tmp/k6-seed.sql
-   docker compose exec -T postgres psql -U harrow -d harrow_db -v commit_seed=true -v first_db=3 -v second_db=8 -f /tmp/k6-seed.sql
-   docker compose cp postgres:/tmp/k6-fixtures.json test/k6/fixtures.local.json
-   ~~~
-
-   Seed menyimpan migration, revisi, dan approval di database aplikasi. SQL migration adalah `SELECT 1;`. Defaultnya 1.300 fixture per skenario untuk durasi 30 detik dan 2 VU normal. Sediakan fixture baru untuk setiap pengulangan skenario. Naikkan `-v same_count=N` dan `-v different_count=N` jika jumlah VU atau durasi bertambah. `different_count` berlaku per database.
-
-3. Dari root repo, jalankan kedua skenario. Contoh memakai Bash atau Zsh. Simpan output k6 dan ringkasan per fase.
-
-   ~~~bash
-   export BASE_URL=http://127.0.0.1:5173 K6_USERNAME=akun-test K6_NORMAL_VUS=2
-   read -s K6_PASSWORD
-   export K6_PASSWORD
-
-   K6_CASE=same_database k6 run --out json=test/k6/results-after-same.json test/k6/stress.js
-   K6_CASE=different_databases k6 run --out json=test/k6/results-after-different.json test/k6/stress.js
-   python3 test/k6/report.py test/k6/results-after-same.json test/k6/results-after-different.json
-   unset K6_PASSWORD
-   ~~~
-
-### Hasil pengujian
-
-Run menggunakan 2 VU normal (maksimum 8 VU) dengan 8 detik per fase. Semua job yang diterima selesai sukses dan kedua skenario lulus threshold p95 API. Skenario database sama gagal threshold error API 1% karena respons HTTP 409.
-
-| Skenario | API req/s | API p50 / p95 | Error API | Job sukses | Queue wait p95 | Durasi job p95 | HTTP 409 |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Database sama | 6.97 | 4.49 / 13.48 ms | 4.40% | 137/137 (100%) | 6.00 ms | 13.20 ms | 27 |
-| Database berbeda | 7.60 | 4.05 / 12.46 ms | 0.45% | 165/165 (100%) | 4.00 ms | 12.00 ms | 3 |
-
-Throughput per tingkat beban dihitung per jendela 8 detik. Durasi job dihitung dari saat masuk antrean hingga selesai.
-
-| Tahap | API p50 / p95 | API req/s | Error | Job sukses/s | Queue wait p95 | Durasi job p95 |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Sama — normal | 4.97 / 11.79 ms | 4.12 | 0.00% | 1.00 | 6.00 ms | 16.25 ms |
-| Sama — 2x | 4.16 / 8.37 ms | 8.12 | 0.00% | 2.00 | 3.00 ms | 10.25 ms |
-| Sama — 4x | 4.54 / 13.33 ms | 14.12 | 7.96% | 2.88 | 3.00 ms | 10.90 ms |
-| Sama — pemulihan 2x | 4.60 / 11.14 ms | 7.75 | 3.23% | 1.75 | 3.00 ms | 11.00 ms |
-| Sama — pemulihan normal | 4.81 / 8.95 ms | 3.50 | 14.29% | 0.62 | 3.00 ms | 9.80 ms |
-| Berbeda — normal | 4.29 / 9.38 ms | 4.12 | 0.00% | 1.00 | 4.95 ms | 12.60 ms |
-| Berbeda — 2x | 3.79 / 12.92 ms | 8.12 | 0.00% | 2.00 | 4.25 ms | 12.25 ms |
-| Berbeda — 4x | 3.99 / 12.23 ms | 16.00 | 1.56% | 3.88 | 4.50 ms | 11.50 ms |
-| Berbeda — pemulihan 2x | 3.85 / 8.11 ms | 8.75 | 0.00% | 2.25 | 4.15 ms | 12.75 ms |
-| Berbeda — pemulihan normal | 4.09 / 9.30 ms | 4.50 | 0.00% | 1.12 | 3.00 ms | 10.60 ms |
-
-P95 tetap di bawah target 1 detik pada semua tingkat beban dan kembali ke sekitar 9 ms saat beban turun ke normal. Queue wait p95 keseluruhan 4–6 ms. Konflik 409 berjumlah 27 pada skenario database sama dan 3 pada skenario database berbeda. Konflik masih muncul pada fase pemulihan database sama.
-
-Setelah penambahan indeks approval, p95 khusus endpoint daftar migration turun dari 53.29 ke 15.78 ms pada database sama dan dari 52.33 ke 13.69 ms pada database berbeda. Job sukses per detik turun dalam pengujian ini, seiring dengan bertambahnya polling ulang yang berjeda satu detik. [Migration indeks approval](internal/store/migrations/000006_latest_approval_index.up.sql)
-
-## Menghentikan Aplikasi
-
-### 1. Hentikan Frontend
-
-Pada terminal frontend:
-- **Development mode:** Tekan `Ctrl+C`
-- **Production mode (Docker):** 
+### 5. Cara Menghentikan (How to Stop)
+- **Mode Manual**: Tekan `Ctrl+C` pada terminal `frontend`, `worker`, dan `server`, lalu hentikan database dengan `docker compose stop postgres commerce-db`.
+- **Mode Docker**:
   ```bash
-  docker compose stop frontend
+  # Menghentikan seluruh container (data tetap tersimpan di volume)
+  docker compose --profile mariadb stop
+
+  # Menghentikan sekaligus menghapus seluruh container dan volume database (reset total)
+  docker compose --profile mariadb down -v
   ```
 
-### 2. Hentikan Worker
+---
 
-Pada terminal worker, tekan `Ctrl+C` untuk menghentikan worker secara graceful.
+## Implementasi SAST dengan CodeQL
 
-### 3. Hentikan API Server
-
-Pada terminal server, tekan `Ctrl+C` untuk menghentikan server.
-
-### 4. Hentikan Database (Optional)
-
-Jika ingin menghentikan database PostgreSQL:
-
-```bash
-docker compose stop postgres
-```
-
-Untuk menghentikan semua container termasuk MariaDB (jika dijalankan):
-
-```bash
-docker compose --profile mariadb stop
-```
-
-> **Catatan:** Data database tetap tersimpan di Docker volume dan akan tersedia kembali saat container dijalankan ulang.
-
-### 5. Hapus Semua Container dan Volume (Reset Total)
-
-Jika ingin menghapus semua data dan memulai dari awal:
-
-```bash
-docker compose --profile mariadb down -v
-```
-
-> **Perintah ini akan menghapus semua data database, termasuk user, group, dan migration history**
+Proyek ini mengimplementasikan *Static Application Security Testing* (**SAST**) otomatis menggunakan **GitHub CodeQL** yang dikonfigurasi pada [`.github/workflows/codeql.yml`](.github/workflows/codeql.yml):
+- **Trigger Otomatis**: Berjalan pada setiap `push` dan `pull_request` ke branch `main` maupun `develop`, serta mendukung eksekusi manual (`workflow_dispatch`) dengan izin minimal (`contents: read`, `security-events: write`).
+- **Cakupan Multi-Bahasa**:
+  - **Go (`build-mode: manual`)**: Mengekstraksi dan menganalisis seluruh paket Go (`server`, `worker`, seeder, dan seluruh package di `internal/`) melalui kompilasi penuh `CGO_ENABLED=1 go build -mod=readonly ./...` sesuai versi Go pada `go.mod`.
+  - **JavaScript/TypeScript (`build-mode: none`)**: Menganalisis kode sumber frontend React (`frontend/src/`) dan skrip JavaScript di repositori secara statis.
+- **Dokumentasi & Bukti Pemindaian**: Riwayat pemindaian PR, tautan *GitHub Security Code Scanning*, dan tinjauan temuan (0 *open alerts*) terdokumentasi di [`docs/codeql.md`](docs/codeql.md).
