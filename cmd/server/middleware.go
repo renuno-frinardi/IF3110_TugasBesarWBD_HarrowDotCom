@@ -10,7 +10,6 @@ import (
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/auth"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/authz"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/telemetry"
-	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/web"
 	"go.opentelemetry.io/otel/attribute"
 )
 
@@ -37,7 +36,6 @@ func (app *application) routes() http.Handler {
 			"csrf_token": auth.CSRFToken(session),
 		})
 	}))
-	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(web.StaticFS()))))
 
 	// Public authentication endpoints
 	mux.HandleFunc("/login", app.loginHandler)
