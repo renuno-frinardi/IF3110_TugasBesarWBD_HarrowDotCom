@@ -262,6 +262,33 @@ cd frontend && npm install && npm run dev
 
 ---
 
+## Tampilan Aplikasi
+
+### Login
+![Halaman login](assets/login.png)
+
+### Dashboard
+![Dashboard](assets/dashboard.png)
+
+### Koneksi PostgreSQL
+![Halaman koneksi PostgreSQL](assets/connections.png)
+
+### Users
+![Halaman users](assets/users.png)
+
+### Groups
+![Halaman groups](assets/groups.png)
+
+### Akses Database
+![Halaman akses database](assets/access.png)
+
+### Audit Logs
+![Halaman audit logs](assets/audit_logs.png)
+
+## Pengujian Beban dengan k6
+
+k6 digunakan untuk menguji performa proses pengajuan migrasi asinkron saat jumlah pengguna virtual meningkat. Skrip [`test/k6/stress.js`](test/k6/stress.js) secara bertahap menaikkan beban hingga 2x dan 4x jumlah pengguna normal, lalu mengamati pemulihan sistem. Pengujian mencatat waktu respons API, tingkat error, dan keberhasilan migrasi; skenarionya dapat menguji satu database atau beberapa database.
+
 ## Implementasi SAST dengan CodeQL
 
 Proyek ini mengimplementasikan *Static Application Security Testing* (**SAST**) otomatis menggunakan **GitHub CodeQL** yang dikonfigurasi pada [`.github/workflows/codeql.yml`](.github/workflows/codeql.yml):
