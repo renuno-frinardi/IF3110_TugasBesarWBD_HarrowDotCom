@@ -1,2 +1,4 @@
 .env
 !.env.example
+/test/k6/fixtures.local.json
+/test/k6/results-*.json
