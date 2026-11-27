@@ -185,8 +185,16 @@ func (s *Store) GetApprovalRequest(ctx context.Context, requestID int64) (*Appro
 	if decided.Valid {
 		req.DecidedAt = &decided.Time
 	}
-	rows, err := s.pool.Query(ctx, `SELECT ag.id,ag.group_id,ag.group_name,ag.leader_user_id,u.username,ag.status,ag.approved_by,ag.approved_at
-FROM approval_groups ag LEFT JOIN users u ON u.id=ag.leader_user_id WHERE ag.approval_request_id=$1 ORDER BY ag.group_name`, requestID)
+	rows, err := s.pool.Query(ctx, `
+		SELECT ag.id,ag.group_id,ag.group_name,u.id,u.username,ag.status,ag.approved_by,ag.approved_at
+		FROM approval_groups ag
+		JOIN approval_requests ar ON ar.id=ag.approval_request_id
+		JOIN user_groups ug ON ug.id=ag.group_id
+		LEFT JOIN users u ON u.id=CASE
+			WHEN ar.status='pending' AND ag.status='pending' THEN ug.leader_user_id
+			ELSE ag.leader_user_id
+		END
+		WHERE ar.id=$1 ORDER BY ag.group_name`, requestID)
 	if err != nil {
 		return nil, err
 	}
@@ -251,8 +259,19 @@ func (s *Store) ApproveApprovalGroups(ctx context.Context, requestID int64, user
 	if status != ApprovalPending {
 		return nil, fmt.Errorf("%w: approval request is %s", ErrInvalidState, status)
 	}
-	tag, err := tx.Exec(ctx, `UPDATE approval_groups SET status='approved',approved_by=$2,approved_at=NOW()
-                WHERE approval_request_id=$1 AND leader_user_id=$2 AND status='pending'`, requestID, userID)
+	// Lock the matching group rows so a concurrent leader change waits for this decision.
+	tag, err := tx.Exec(ctx, `
+		WITH reviewer_groups AS (
+			SELECT ug.id
+			FROM user_groups ug
+			JOIN approval_groups ag ON ag.group_id=ug.id
+			WHERE ag.approval_request_id=$1 AND ag.status='pending' AND ug.leader_user_id=$2
+			FOR SHARE OF ug
+		)
+		UPDATE approval_groups ag
+		SET status='approved',leader_user_id=$2,approved_by=$2,approved_at=NOW()
+		FROM reviewer_groups rg
+		WHERE ag.approval_request_id=$1 AND ag.group_id=rg.id AND ag.status='pending'`, requestID, userID)
 	if err != nil {
 		return nil, err
 	}

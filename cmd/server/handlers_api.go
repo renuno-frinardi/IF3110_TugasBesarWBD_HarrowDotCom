@@ -286,7 +286,8 @@ func (app *application) writeMigrationDetail(w http.ResponseWriter, r *http.Requ
 	if err := app.stores.pgPool.QueryRow(r.Context(), `
 		SELECT COUNT(*) FROM approval_groups ag
 		JOIN approval_requests ar ON ar.id=ag.approval_request_id
-		WHERE ar.migration_id=$1 AND ar.status='pending' AND ag.status='pending' AND ag.leader_user_id=$2
+		JOIN user_groups ug ON ug.id=ag.group_id
+		WHERE ar.migration_id=$1 AND ar.status='pending' AND ag.status='pending' AND ug.leader_user_id=$2
 	`, m.ID, u.ID).Scan(&pendingMyApprove); err != nil {
 		app.writeAPIError(w, err)
 		return
@@ -510,9 +511,10 @@ func (app *application) reviewListHandler(w http.ResponseWriter, r *http.Request
 		SELECT ar.id,ar.migration_id,ar.revision_id,ar.action,ar.status,ar.created_at,m.title,COALESCE(mr.revision_no,1)
 		FROM approval_requests ar
 		JOIN approval_groups ag ON ag.approval_request_id=ar.id
+		JOIN user_groups ug ON ug.id=ag.group_id
 		JOIN migrations m ON m.id=ar.migration_id
 		LEFT JOIN migration_revisions mr ON mr.id=ar.revision_id
-		WHERE ar.status='pending' AND ag.status='pending' AND ag.leader_user_id=$1
+		WHERE ar.status='pending' AND ag.status='pending' AND ug.leader_user_id=$1
 		GROUP BY ar.id,m.title,mr.revision_no ORDER BY ar.created_at DESC`, u.ID)
 	if err != nil {
 		app.writeAPIError(w, err)
