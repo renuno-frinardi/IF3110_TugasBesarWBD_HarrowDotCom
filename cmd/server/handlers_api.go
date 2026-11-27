@@ -13,7 +13,6 @@ import (
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/auth"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/authz"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/migration"
-	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/telemetry"
 )
 
 type migrationDefinitionRequest struct {
@@ -458,7 +457,6 @@ func (app *application) migrationExecutionHandler(w http.ResponseWriter, r *http
 		return
 	}
 	u, _ := auth.UserFromContext(r.Context())
-	traceCtx := telemetry.InjectTraceContext(r.Context())
 
 	var action string
 	var reqID int64
@@ -471,11 +469,11 @@ func (app *application) migrationExecutionHandler(w http.ResponseWriter, r *http
 
 	var e *migration.Execution
 	if err == nil && action == migration.ActionDown {
-		e, err = app.migService.ExecuteRollback(r.Context(), int(u.ID), id, traceCtx)
+		e, err = app.migService.ExecuteRollback(r.Context(), int(u.ID), id, "")
 	} else if err == nil && action == migration.ActionForward {
-		e, err = app.migService.ExecuteForward(r.Context(), int(u.ID), id, traceCtx)
+		e, err = app.migService.ExecuteForward(r.Context(), int(u.ID), id, "")
 	} else {
-		e, err = app.migService.ExecuteUp(r.Context(), int(u.ID), id, true, traceCtx)
+		e, err = app.migService.ExecuteUp(r.Context(), int(u.ID), id, true, "")
 	}
 	if err != nil {
 		app.writeAPIError(w, err)

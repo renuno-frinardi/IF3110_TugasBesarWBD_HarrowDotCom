@@ -9,17 +9,12 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/migration"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/telemetry"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 )
 
 func (w *Worker) executeBatchMode(ctx context.Context, job *QueueJob, lease *LeaseHandle, target *pgx.Conn) executionOutcome {
 	if job.Action == migration.ActionDown {
 		return w.executeFullBatchRollback(ctx, job, lease, target)
 	}
-
-	ctx, span := telemetry.Tracer("worker").Start(ctx, "migration.batch_execution")
-	defer span.End()
 
 	actorStr := strconv.Itoa(job.RequestedBy)
 	dbStr := strconv.Itoa(job.DatabaseID)
@@ -116,26 +111,13 @@ func (w *Worker) executeBatchMode(ctx context.Context, job *QueueJob, lease *Lea
 			}
 		}
 
-		batchCtx, batchSpan := telemetry.Tracer("worker").Start(ctx, "migration.batch")
-		batchSpan.SetAttributes(
-			attribute.Int("batch.no", nextBatchNo),
-			attribute.String("batch.last_cursor", lastCursor),
-			attribute.Int("batch.size", job.BatchConfig.Size),
-		)
-
 		wrappedSQL, renderedDML, buildErr := BuildBatchUpQuery(job.SQL, job.BatchConfig, lastCursor)
 		if buildErr != nil {
-			batchSpan.RecordError(buildErr)
-			batchSpan.SetStatus(codes.Error, buildErr.Error())
-			batchSpan.End()
 			return w.batchFailureOutcome(committedBatches, totalRowsCommitted, buildErr, false)
 		}
 
-		tx, txErr := target.Begin(batchCtx)
+		tx, txErr := target.Begin(ctx)
 		if txErr != nil {
-			batchSpan.RecordError(txErr)
-			batchSpan.SetStatus(codes.Error, txErr.Error())
-			batchSpan.End()
 			return w.batchFailureOutcome(committedBatches, totalRowsCommitted, txErr, false)
 		}
 
@@ -150,30 +132,26 @@ func (w *Worker) executeBatchMode(ctx context.Context, job *QueueJob, lease *Lea
 			Query:       renderedDML,
 			Params:      []any{lastCursor, job.BatchConfig.Size},
 		}
-		telemetry.LogSQLStart(batchCtx, w.logger, logBase)
+		telemetry.LogSQLStart(ctx, w.logger, logBase)
 
 		qStart := time.Now()
 		var rowsAffected int64
 		var cursorFrom, cursorTo string
-		qErr := tx.QueryRow(batchCtx, wrappedSQL).Scan(&rowsAffected, &cursorFrom, &cursorTo)
+		qErr := tx.QueryRow(ctx, wrappedSQL).Scan(&rowsAffected, &cursorFrom, &cursorTo)
 		qDur := time.Since(qStart)
 
 		resLog := logBase
 		resLog.Duration = qDur
 		resLog.RowsAffected = rowsAffected
 		resLog.Err = qErr
-		telemetry.LogSQLResult(batchCtx, w.logger, resLog)
+		telemetry.LogSQLResult(ctx, w.logger, resLog)
 
 		if qErr != nil {
 			rbStart := time.Now()
 			_ = tx.Rollback(context.Background())
 			rbLog := logBase
 			rbLog.Duration = time.Since(rbStart)
-			telemetry.LogTxOutcome(batchCtx, w.logger, false, rbLog)
-
-			batchSpan.RecordError(qErr)
-			batchSpan.SetStatus(codes.Error, qErr.Error())
-			batchSpan.End()
+			telemetry.LogTxOutcome(ctx, w.logger, false, rbLog)
 			return w.batchFailureOutcome(committedBatches, totalRowsCommitted, qErr, false)
 		}
 
@@ -183,8 +161,7 @@ func (w *Worker) executeBatchMode(ctx context.Context, job *QueueJob, lease *Lea
 			rbLog := logBase
 			rbLog.Duration = time.Since(rbStart)
 			rbLog.Status = "empty_batch_done"
-			telemetry.LogTxOutcome(batchCtx, w.logger, false, rbLog)
-			batchSpan.End()
+			telemetry.LogTxOutcome(ctx, w.logger, false, rbLog)
 			break
 		}
 
@@ -196,33 +173,26 @@ func (w *Worker) executeBatchMode(ctx context.Context, job *QueueJob, lease *Lea
 			RowsAffected: rowsAffected,
 			Status:       "committed",
 		}
-		if cpErr := SaveTargetBatchCheckpointTx(batchCtx, tx, cp); cpErr != nil {
+		if cpErr := SaveTargetBatchCheckpointTx(ctx, tx, cp); cpErr != nil {
 			_ = tx.Rollback(context.Background())
-			telemetry.LogTxOutcome(batchCtx, w.logger, false, telemetry.SQLLogEntry{
+			telemetry.LogTxOutcome(ctx, w.logger, false, telemetry.SQLLogEntry{
 				Actor: actorStr, Database: dbStr, MigrationID: job.MigrationID,
 				JobID: job.JobID, ExecutionID: job.ExecutionID, Attempt: job.Attempt, BatchNo: nextBatchNo, Err: cpErr,
 			})
-			batchSpan.RecordError(cpErr)
-			batchSpan.SetStatus(codes.Error, cpErr.Error())
-			batchSpan.End()
 			return w.batchFailureOutcome(committedBatches, totalRowsCommitted, cpErr, false)
 		}
 
 		commitStart := time.Now()
-		commitErr := tx.Commit(batchCtx)
+		commitErr := tx.Commit(ctx)
 		commitDur := time.Since(commitStart)
 
 		txLog := logBase
 		txLog.Duration = commitDur
 		txLog.RowsAffected = rowsAffected
 		txLog.Err = commitErr
-		telemetry.LogTxOutcome(batchCtx, w.logger, commitErr == nil, txLog)
+		telemetry.LogTxOutcome(ctx, w.logger, commitErr == nil, txLog)
 
 		if commitErr != nil {
-			batchSpan.RecordError(commitErr)
-			batchSpan.SetStatus(codes.Error, commitErr.Error())
-			batchSpan.End()
-
 			if IsCommitUncertain(target, commitErr) {
 				verifiedCP, verErr := w.verifyUncertainBatchCommit(ctx, job.DatabaseID, job.ExecutionID, nextBatchNo)
 				if verErr == nil && verifiedCP != nil {
@@ -255,11 +225,6 @@ func (w *Worker) executeBatchMode(ctx context.Context, job *QueueJob, lease *Lea
 		committedBatches++
 		totalRowsCommitted += rowsAffected
 		lastCursor = cursorTo
-		batchSpan.SetAttributes(
-			attribute.Int64("batch.rows_affected", rowsAffected),
-			attribute.String("batch.cursor_to", cursorTo),
-		)
-		batchSpan.End()
 		nextBatchNo++
 
 	}

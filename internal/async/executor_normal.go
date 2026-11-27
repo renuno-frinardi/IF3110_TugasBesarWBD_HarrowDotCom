@@ -9,8 +9,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/migration"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/telemetry"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 )
 
 type executionOutcome struct {
@@ -22,29 +20,15 @@ type executionOutcome struct {
 }
 
 func (w *Worker) executeNormalMode(ctx context.Context, job *QueueJob, lease *LeaseHandle, target *pgx.Conn) executionOutcome {
-	ctx, span := telemetry.Tracer("worker").Start(ctx, "migration.normal")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.String("job.id", job.JobID),
-		attribute.Int64("execution.id", job.ExecutionID),
-		attribute.Int("migration.id", job.MigrationID),
-		attribute.Int("attempt", job.Attempt),
-	)
-
 	actorStr := strconv.Itoa(job.RequestedBy)
 	dbStr := strconv.Itoa(job.DatabaseID)
 
 	if err := EnsureTargetLedgerTables(ctx, target); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
 		return executionOutcome{Status: migration.ExecFailed, Err: fmt.Errorf("prepare target ledger: %w", err)}
 	}
 
 	alreadyCommitted, priorRows, err := CheckNormalExecutionProof(ctx, target, job.ExecutionID)
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
 		return executionOutcome{Status: migration.ExecFailed, Err: fmt.Errorf("verify execution proof: %w", err)}
 	}
 	if DecideNormalIdempotency("", alreadyCommitted) == NormalDecisionSkipCompleted {
@@ -66,8 +50,6 @@ func (w *Worker) executeNormalMode(ctx context.Context, job *QueueJob, lease *Le
 
 	tx, err := target.Begin(ctx)
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
 		return executionOutcome{Status: migration.ExecFailed, Err: fmt.Errorf("begin target transaction: %w", err)}
 	}
 	defer func() {
@@ -76,7 +58,6 @@ func (w *Worker) executeNormalMode(ctx context.Context, job *QueueJob, lease *Le
 		_ = tx.Rollback(rbCtx)
 	}()
 
-	queryCtx, querySpan := telemetry.Tracer("worker").Start(ctx, "sql.query")
 	baseEntry := telemetry.SQLLogEntry{
 		Actor:       actorStr,
 		Database:    dbStr,
@@ -87,10 +68,10 @@ func (w *Worker) executeNormalMode(ctx context.Context, job *QueueJob, lease *Le
 		BatchNo:     0,
 		Query:       job.SQL,
 	}
-	telemetry.LogSQLStart(queryCtx, w.logger, baseEntry)
+	telemetry.LogSQLStart(ctx, w.logger, baseEntry)
 
 	execStart := time.Now()
-	tag, execErr := tx.Exec(queryCtx, job.SQL)
+	tag, execErr := tx.Exec(ctx, job.SQL)
 	execDur := time.Since(execStart)
 
 	resEntry := baseEntry
@@ -99,25 +80,17 @@ func (w *Worker) executeNormalMode(ctx context.Context, job *QueueJob, lease *Le
 		resEntry.RowsAffected = tag.RowsAffected()
 	}
 	resEntry.Err = execErr
-	telemetry.LogSQLResult(queryCtx, w.logger, resEntry)
+	telemetry.LogSQLResult(ctx, w.logger, resEntry)
 
 	if execErr != nil {
-		querySpan.RecordError(execErr)
-		querySpan.SetStatus(codes.Error, execErr.Error())
-		querySpan.End()
-
 		rbStart := time.Now()
 		_ = tx.Rollback(context.Background())
 		rbEntry := baseEntry
 		rbEntry.Duration = time.Since(rbStart)
 		telemetry.LogTxOutcome(ctx, w.logger, false, rbEntry)
 
-		span.RecordError(execErr)
-		span.SetStatus(codes.Error, execErr.Error())
 		return executionOutcome{Status: migration.ExecFailed, Err: execErr}
 	}
-	querySpan.SetAttributes(attribute.Int64("db.rows_affected", tag.RowsAffected()))
-	querySpan.End()
 
 	if err := RecordNormalExecutionProofTx(ctx, tx, job.ExecutionID, job.JobID, job.Action, tag.RowsAffected()); err != nil {
 		_ = tx.Rollback(context.Background())
@@ -128,17 +101,15 @@ func (w *Worker) executeNormalMode(ctx context.Context, job *QueueJob, lease *Le
 		return executionOutcome{Status: migration.ExecFailed, Err: fmt.Errorf("record target execution proof: %w", err)}
 	}
 
-	commitCtx, commitSpan := telemetry.Tracer("worker").Start(ctx, "tx.commit")
 	commitStart := time.Now()
-	commitErr := tx.Commit(commitCtx)
+	commitErr := tx.Commit(ctx)
 	commitDur := time.Since(commitStart)
-	commitSpan.End()
 
 	txEntry := baseEntry
 	txEntry.Duration = commitDur
 	txEntry.RowsAffected = tag.RowsAffected()
 	txEntry.Err = commitErr
-	telemetry.LogTxOutcome(commitCtx, w.logger, commitErr == nil, txEntry)
+	telemetry.LogTxOutcome(ctx, w.logger, commitErr == nil, txEntry)
 
 	if commitErr != nil {
 		if IsCommitUncertain(target, commitErr) {

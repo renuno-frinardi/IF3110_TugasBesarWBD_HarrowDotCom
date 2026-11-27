@@ -197,5 +197,4 @@ type JobMessage struct {
 	DownSQL      string
 	Irreversible bool
 	RequestedBy  int
-	TraceContext string
 }

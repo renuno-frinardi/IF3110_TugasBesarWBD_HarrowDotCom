@@ -9,21 +9,14 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/migration"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/telemetry"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 )
 
 func (w *Worker) executeCancelBatches(ctx context.Context, job *QueueJob, lease *LeaseHandle, target *pgx.Conn) executionOutcome {
-	ctx, span := telemetry.Tracer("worker").Start(ctx, "migration.cancel_batches")
-	defer span.End()
-
 	actorStr := strconv.Itoa(job.RequestedBy)
 	dbStr := strconv.Itoa(job.DatabaseID)
 
 	if job.Irreversible || !CanSafelyRevertBatchSQL(job.DownSQL) {
 		err := fmt.Errorf("%w: cannot revert committed batches without safe range-scoped down SQL", ErrCancelUnsafe)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
 		return executionOutcome{Status: migration.ExecPartial, Err: err}
 	}
 
@@ -100,26 +93,13 @@ func (w *Worker) executeCancelBatches(ctx context.Context, job *QueueJob, lease 
 			}
 		}
 
-		revCtx, revSpan := telemetry.Tracer("worker").Start(ctx, "migration.revert_batch")
-		revSpan.SetAttributes(
-			attribute.Int("batch.no", b.BatchNo),
-			attribute.String("batch.cursor_from", b.CursorFrom),
-			attribute.String("batch.cursor_to", b.CursorTo),
-		)
-
 		downSQL, buildErr := BuildBatchDownQuery(job.DownSQL, job.BatchConfig, b.CursorFrom, b.CursorTo)
 		if buildErr != nil {
-			revSpan.RecordError(buildErr)
-			revSpan.SetStatus(codes.Error, buildErr.Error())
-			revSpan.End()
 			return w.revertFailureOutcome(revertedSoFar, remainingRows, buildErr, false)
 		}
 
-		tx, txErr := target.Begin(revCtx)
+		tx, txErr := target.Begin(ctx)
 		if txErr != nil {
-			revSpan.RecordError(txErr)
-			revSpan.SetStatus(codes.Error, txErr.Error())
-			revSpan.End()
 			return w.revertFailureOutcome(revertedSoFar, remainingRows, txErr, false)
 		}
 
@@ -128,41 +108,34 @@ func (w *Worker) executeCancelBatches(ctx context.Context, job *QueueJob, lease 
 			JobID: job.JobID, ExecutionID: job.ExecutionID, Attempt: job.Attempt, BatchNo: b.BatchNo,
 			Query: downSQL, Params: []any{b.CursorFrom, b.CursorTo},
 		}
-		telemetry.LogSQLStart(revCtx, w.logger, logEntry)
+		telemetry.LogSQLStart(ctx, w.logger, logEntry)
 
 		qStart := time.Now()
-		tag, qErr := tx.Exec(revCtx, downSQL)
+		tag, qErr := tx.Exec(ctx, downSQL)
 		logEntry.Duration = time.Since(qStart)
 		if qErr == nil {
 			logEntry.RowsAffected = tag.RowsAffected()
 		}
 		logEntry.Err = qErr
-		telemetry.LogSQLResult(revCtx, w.logger, logEntry)
+		telemetry.LogSQLResult(ctx, w.logger, logEntry)
 
 		if qErr != nil {
 			_ = tx.Rollback(context.Background())
-			telemetry.LogTxOutcome(revCtx, w.logger, false, logEntry)
-			revSpan.RecordError(qErr)
-			revSpan.SetStatus(codes.Error, qErr.Error())
-			revSpan.End()
+			telemetry.LogTxOutcome(ctx, w.logger, false, logEntry)
 			return w.revertFailureOutcome(revertedSoFar, remainingRows, qErr, false)
 		}
 
-		if markErr := MarkTargetBatchRevertedTx(revCtx, tx, job.ExecutionID, b.BatchNo); markErr != nil {
+		if markErr := MarkTargetBatchRevertedTx(ctx, tx, job.ExecutionID, b.BatchNo); markErr != nil {
 			_ = tx.Rollback(context.Background())
-			telemetry.LogTxOutcome(revCtx, w.logger, false, logEntry)
-			revSpan.RecordError(markErr)
-			revSpan.SetStatus(codes.Error, markErr.Error())
-			revSpan.End()
+			telemetry.LogTxOutcome(ctx, w.logger, false, logEntry)
 			return w.revertFailureOutcome(revertedSoFar, remainingRows, markErr, false)
 		}
 
 		cStart := time.Now()
-		cErr := tx.Commit(revCtx)
+		cErr := tx.Commit(ctx)
 		logEntry.Duration = time.Since(cStart)
 		logEntry.Err = cErr
-		telemetry.LogTxOutcome(revCtx, w.logger, cErr == nil, logEntry)
-		revSpan.End()
+		telemetry.LogTxOutcome(ctx, w.logger, cErr == nil, logEntry)
 
 		if cErr != nil {
 			return w.revertFailureOutcome(revertedSoFar, remainingRows, cErr, IsCommitUncertain(target, cErr))

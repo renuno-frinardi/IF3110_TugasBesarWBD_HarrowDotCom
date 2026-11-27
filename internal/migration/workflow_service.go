@@ -232,7 +232,6 @@ func (s *Service) executeJob(ctx context.Context, m *Migration, r *Revision, act
 		DownSQL:      r.DownSQL,
 		Irreversible: r.Irreversible,
 		RequestedBy:  userID,
-		TraceContext: trace,
 	}
 	if _, err := s.publisher.PublishJob(ctx, job); err != nil {
 		_ = s.store.RecordExecutionResult(context.Background(), ExecutionResult{JobID: jobID, Attempt: 1, Status: ExecFailed, ErrorMessage: err.Error()})

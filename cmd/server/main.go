@@ -108,16 +108,6 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	shutdownTracing, err := telemetry.InitTracing(ctx, "harrow-api", os.Stdout)
-	if err != nil {
-		log.Fatalf("Failed to initialize OpenTelemetry tracing: %v", err)
-	}
-	defer func() {
-		flushCtx, flushCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer flushCancel()
-		_ = shutdownTracing(flushCtx)
-	}()
-
 	postgresURL := store.PostgresAppURL(
 		envOrDefault("POSTGRES_HOST", "localhost"),
 		envIntOrDefault("POSTGRES_PORT", 5433),

@@ -17,8 +17,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/migration"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/telemetry"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 )
 
 type TargetDialer func(ctx context.Context, databaseID int) (*pgx.Conn, error)
@@ -226,29 +224,12 @@ func (w *Worker) processClaimedJob(parentCtx context.Context, job *QueueJob) {
 	actorStr := strconv.Itoa(job.RequestedBy)
 	dbStr := strconv.Itoa(job.DatabaseID)
 
-	ctx := telemetry.ExtractTraceContext(parentCtx, job.TraceContext)
-	ctx = telemetry.WithCorrelationID(ctx, job.JobID)
+	ctx := telemetry.WithCorrelationID(parentCtx, job.JobID)
 	ctx = telemetry.WithActor(ctx, actorStr)
 	ctx = telemetry.WithDatabase(ctx, dbStr)
 
-	ctx, span := telemetry.Tracer("worker").Start(ctx, "worker.process_job")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.String("worker.id", w.id),
-		attribute.String("job.id", job.JobID),
-		attribute.String("job.kind", job.JobKind),
-		attribute.Int64("execution.id", job.ExecutionID),
-		attribute.Int("database.id", job.DatabaseID),
-		attribute.Int("migration.id", job.MigrationID),
-		attribute.String("migration.action", job.Action),
-		attribute.String("migration.mode", job.Mode),
-		attribute.Int("job.attempt", job.Attempt),
-	)
-
 	lease, lockErr := w.locks.Acquire(ctx, job.DatabaseID, w.id, job.JobID, job.ExecutionID, job.JobKind)
 	if lockErr != nil {
-		span.RecordError(lockErr)
 		_ = w.queue.RequeueWithDelay(ctx, job.ID, w.pollInterval, lockErr.Error(), true)
 		return
 	}
@@ -331,8 +312,6 @@ func (w *Worker) processClaimedJob(parentCtx context.Context, job *QueueJob) {
 		if outcome.Err != nil {
 			errMsg = outcome.Err.Error()
 		}
-		span.RecordError(outcome.Err)
-		span.SetStatus(codes.Error, errMsg)
 		_ = lease.HoldBlocked(ctx, LockStateBlockedUncertain, errMsg)
 		_ = w.queue.MarkDead(ctx, job.ID, errMsg)
 		w.logger.ErrorContext(ctx, "worker.job.uncertain_commit",
@@ -442,8 +421,6 @@ func (w *Worker) processClaimedJob(parentCtx context.Context, job *QueueJob) {
 			slog.String("status", migration.ExecSuccess),
 		)
 	case migration.ExecPartial, migration.ExecPartiallyReverted:
-		span.RecordError(outcome.Err)
-		span.SetStatus(codes.Error, errMsg)
 		_ = w.queue.MarkDead(ctx, job.ID, errMsg)
 		_ = lease.HoldBlocked(ctx, LockStateBlockedPartial, errMsg)
 		w.logger.ErrorContext(ctx, "worker.job.partial",
@@ -467,8 +444,6 @@ func (w *Worker) processClaimedJob(parentCtx context.Context, job *QueueJob) {
 				slog.String("status", migration.ExecFailed),
 			)
 		} else {
-			span.RecordError(outcome.Err)
-			span.SetStatus(codes.Error, errMsg)
 			_ = w.queue.MarkDead(ctx, job.ID, errMsg)
 			_ = lease.Release(ctx)
 			w.logger.ErrorContext(ctx, "worker.job.failed",

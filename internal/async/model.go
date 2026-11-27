@@ -48,7 +48,6 @@ type QueueJob struct {
 	DownSQL         string
 	Irreversible    bool
 	RequestedBy     int
-	TraceContext    string
 	Status          string
 	Attempt         int
 	MaxAttempts     int

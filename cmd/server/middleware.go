@@ -10,7 +10,6 @@ import (
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/auth"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/authz"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/telemetry"
-	"go.opentelemetry.io/otel/attribute"
 )
 
 type statusRecorder struct {
@@ -113,23 +112,11 @@ func (app *application) routes() http.Handler {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 
 		ctx := telemetry.WithCorrelationID(r.Context(), corrID)
-		if incomingTrace := strings.TrimSpace(r.Header.Get("traceparent")); incomingTrace != "" {
-			ctx = telemetry.ExtractTraceContext(ctx, incomingTrace)
-		}
-
-		ctx, span := telemetry.Tracer("api").Start(ctx, r.Method+" "+r.URL.Path)
-		defer span.End()
 
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		start := time.Now()
 		mux.ServeHTTP(rec, r.WithContext(ctx))
 		dur := time.Since(start)
-
-		span.SetAttributes(
-			attribute.String("http.method", r.Method),
-			attribute.String("http.target", auth.SanitizeURL(r.URL)),
-			attribute.Int("http.status_code", rec.status),
-		)
 
 		if app.slogLogger != nil {
 			app.slogLogger.InfoContext(ctx, "http.request",

@@ -14,9 +14,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/migration"
-	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/telemetry"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 )
 
 type Queue struct {
@@ -47,26 +44,6 @@ func (q *Queue) PublishJob(ctx context.Context, job migration.JobMessage) (strin
 		return "", fmt.Errorf("%w: job_id is required", migration.InvalidInput)
 	}
 
-	if job.TraceContext != "" {
-		ctx = telemetry.ExtractTraceContext(ctx, job.TraceContext)
-	}
-	ctx, span := telemetry.Tracer("queue").Start(ctx, "queue.publish")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.String("job.id", job.JobID),
-		attribute.Int64("execution.id", job.ExecutionID),
-		attribute.Int("database.id", job.DatabaseID),
-		attribute.Int("migration.id", job.MigrationID),
-		attribute.String("migration.action", job.Action),
-		attribute.String("migration.mode", job.Mode),
-	)
-
-	traceCtx := telemetry.InjectTraceContext(ctx)
-	if traceCtx == "" {
-		traceCtx = job.TraceContext
-	}
-
 	downSQL := job.DownSQL
 	irreversible := job.Irreversible
 	requestedBy := job.RequestedBy
@@ -90,8 +67,6 @@ func (q *Queue) PublishJob(ctx context.Context, job migration.JobMessage) (strin
 	}
 	cfgBytes, err := json.Marshal(job.BatchConfig)
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
 		return "", err
 	}
 
@@ -108,16 +83,14 @@ func (q *Queue) PublishJob(ctx context.Context, job migration.JobMessage) (strin
 		) VALUES (
 			$1, $2, $3, $4, $5,
 			'execute', $6, $7, $8, $9, $10,
-			$11, $12, $13, 'queued', $14
+			$11, $12, '', 'queued', $13
 		)
 		ON CONFLICT (job_id, job_kind) WHERE status IN ('queued', 'processing')
 		DO NOTHING
 	`, job.JobID, job.ExecutionID, job.DatabaseID, job.MigrationID, job.RevisionID,
 		job.Action, mode, cfgBytes, job.SQL, downSQL,
-		irreversible, reqAny, traceCtx, q.maxAttempts)
+		irreversible, reqAny, q.maxAttempts)
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
 		return "", fmt.Errorf("enqueue migration job: %w", err)
 	}
 
@@ -142,16 +115,12 @@ func (q *Queue) EnqueueResume(ctx context.Context, e *migration.Execution, rev *
 		return "", fmt.Errorf("%w: execution in status %s cannot be resumed", migration.ErrInvalidState, e.Status)
 	}
 
-	ctx, span := telemetry.Tracer("queue").Start(ctx, "queue.publish.resume")
-	defer span.End()
-
 	kind := JobKindResume
 	if e.Status == migration.ExecPartiallyReverted {
 		kind = JobKindCancelBatches
 	}
 
 	cfgBytes, _ := json.Marshal(e.BatchConfig)
-	traceCtx := telemetry.InjectTraceContext(ctx)
 
 	var maxAttemptSoFar int
 	_ = q.pool.QueryRow(ctx, `SELECT COALESCE(MAX(attempt_no), 0) FROM execution_attempts WHERE execution_id = $1`, e.ID).Scan(&maxAttemptSoFar)
@@ -164,16 +133,14 @@ func (q *Queue) EnqueueResume(ctx context.Context, e *migration.Execution, rev *
 		) VALUES (
 			$1, $2, $3, $4, $5,
 			$6, $7, $8, $9, $10, $11,
-			$12, $13, $14, 'queued', $15, $16
+			$12, $13, '', 'queued', $14, $15
 		)
 		ON CONFLICT (job_id, job_kind) WHERE status IN ('queued', 'processing')
 		DO NOTHING
 	`, e.JobID, e.ID, e.DatabaseID, e.MigrationID, e.RevisionID,
 		kind, e.Action, e.Mode, cfgBytes, e.SQLExecuted, rev.DownSQL,
-		rev.Irreversible, userID, traceCtx, maxAttemptSoFar, maxAttemptSoFar+q.maxAttempts)
+		rev.Irreversible, userID, maxAttemptSoFar, maxAttemptSoFar+q.maxAttempts)
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
 		return "", fmt.Errorf("enqueue resume job: %w", err)
 	}
 
@@ -205,9 +172,6 @@ func (q *Queue) EnqueueCancelBatches(ctx context.Context, e *migration.Execution
 		return "", fmt.Errorf("%w: execution in status %s cannot cancel batches", migration.ErrInvalidState, e.Status)
 	}
 
-	ctx, span := telemetry.Tracer("queue").Start(ctx, "queue.publish.cancel_batches")
-	defer span.End()
-
 	_, _ = q.pool.Exec(ctx, `
 		UPDATE migration_jobs
 		SET cancel_requested = TRUE,
@@ -217,7 +181,6 @@ func (q *Queue) EnqueueCancelBatches(ctx context.Context, e *migration.Execution
 	`, e.JobID)
 
 	cfgBytes, _ := json.Marshal(e.BatchConfig)
-	traceCtx := telemetry.InjectTraceContext(ctx)
 
 	var maxAttemptSoFar int
 	_ = q.pool.QueryRow(ctx, `SELECT COALESCE(MAX(attempt_no), 0) FROM execution_attempts WHERE execution_id = $1`, e.ID).Scan(&maxAttemptSoFar)
@@ -230,16 +193,14 @@ func (q *Queue) EnqueueCancelBatches(ctx context.Context, e *migration.Execution
 		) VALUES (
 			$1, $2, $3, $4, $5,
 			'cancel_batches', $6, $7, $8, $9, $10,
-			$11, $12, $13, 'queued', $14, $15
+			$11, $12, '', 'queued', $13, $14
 		)
 		ON CONFLICT (job_id, job_kind) WHERE status IN ('queued', 'processing')
 		DO NOTHING
 	`, e.JobID, e.ID, e.DatabaseID, e.MigrationID, e.RevisionID,
 		e.Action, e.Mode, cfgBytes, e.SQLExecuted, rev.DownSQL,
-		rev.Irreversible, userID, traceCtx, maxAttemptSoFar, maxAttemptSoFar+q.maxAttempts)
+		rev.Irreversible, userID, maxAttemptSoFar, maxAttemptSoFar+q.maxAttempts)
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
 		return "", fmt.Errorf("enqueue cancel-batches job: %w", err)
 	}
 
@@ -309,7 +270,7 @@ func (q *Queue) ClaimNextJob(ctx context.Context, workerID string, staleProcessi
 		RETURNING
 			mj.id, mj.job_id, mj.execution_id, mj.database_id, mj.migration_id, mj.revision_id,
 			mj.job_kind, mj.action, mj.mode, mj.batch_config, mj.sql_text, mj.down_sql_text,
-			mj.irreversible, mj.requested_by, mj.trace_context, mj.status, mj.attempt, mj.max_attempts,
+			mj.irreversible, mj.requested_by, mj.status, mj.attempt, mj.max_attempts,
 			mj.next_run_at, mj.locked_by, mj.locked_at, mj.cancel_requested, mj.last_error,
 			mj.created_at, mj.updated_at
 	`, workerID, staleCutoff)
@@ -338,7 +299,7 @@ func scanQueueJob(row pgx.Row) (*QueueJob, error) {
 	err := row.Scan(
 		&j.ID, &j.JobID, &j.ExecutionID, &j.DatabaseID, &j.MigrationID, &j.RevisionID,
 		&j.JobKind, &j.Action, &j.Mode, &cfgRaw, &j.SQL, &j.DownSQL,
-		&j.Irreversible, &reqBy, &j.TraceContext, &j.Status, &j.Attempt, &j.MaxAttempts,
+		&j.Irreversible, &reqBy, &j.Status, &j.Attempt, &j.MaxAttempts,
 		&j.NextRunAt, &lockedBy, &lockedAt, &j.CancelRequested, &lastErr,
 		&j.CreatedAt, &j.UpdatedAt,
 	)

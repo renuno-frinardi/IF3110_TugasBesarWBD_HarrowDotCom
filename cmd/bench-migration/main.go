@@ -61,12 +61,7 @@ func main() {
 	var logWriter io.Writer = io.Discard
 	if *verboseLogs {
 		logWriter = os.Stdout
-		_ = os.Setenv("OTEL_EXPORTER", "stdout")
-	} else {
-		_ = os.Setenv("OTEL_EXPORTER", "none")
 	}
-	shutdownTracing, _ := telemetry.InitTracing(ctx, "harrow-bench", logWriter)
-	defer func() { _ = shutdownTracing(context.Background()) }()
 
 	logger := telemetry.NewJSONLogger(logWriter, slog.LevelInfo)
 

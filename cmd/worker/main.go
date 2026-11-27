@@ -26,17 +26,6 @@ func main() {
 	rootCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
 
-	shutdownTracing, err := telemetry.InitTracing(rootCtx, "harrow-worker", os.Stdout)
-	if err != nil {
-		logger.Error("worker.tracing.init_failed", "error", err, "status", "fatal")
-		os.Exit(1)
-	}
-	defer func() {
-		flushCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = shutdownTracing(flushCtx)
-	}()
-
 	postgresURL := store.PostgresAppURL(
 		envOrDefault("POSTGRES_HOST", "localhost"),
 		envIntOrDefault("POSTGRES_PORT", 5433),

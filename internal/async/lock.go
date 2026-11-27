@@ -12,9 +12,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/migration"
-	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/telemetry"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 )
 
 type LockManager struct {
@@ -67,21 +64,8 @@ type LeaseHandle struct {
 }
 
 func (m *LockManager) Acquire(ctx context.Context, databaseID int, workerID, jobID string, executionID int64, jobKind string) (*LeaseHandle, error) {
-	ctx, span := telemetry.Tracer("lock").Start(ctx, "db_lock.acquire")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("database.id", databaseID),
-		attribute.String("worker.id", workerID),
-		attribute.String("job.id", jobID),
-		attribute.Int64("execution.id", executionID),
-		attribute.String("job.kind", jobKind),
-	)
-
 	tx, err := m.pool.Begin(ctx)
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
@@ -103,8 +87,6 @@ func (m *LockManager) Acquire(ctx context.Context, databaseID int, workerID, job
 	`, databaseID, executionID).Scan(&otherExecID, &otherStatus)
 	if err == nil {
 		msg := fmt.Errorf("%w: execution %d is %s", ErrDatabaseBlocked, otherExecID, otherStatus)
-		span.RecordError(msg)
-		span.SetStatus(codes.Error, msg.Error())
 		return nil, msg
 	} else if !errors.Is(err, pgx.ErrNoRows) {
 		return nil, err
