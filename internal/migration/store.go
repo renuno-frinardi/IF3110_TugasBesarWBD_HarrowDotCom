@@ -62,13 +62,13 @@ func (s *Store) CreateDraftWithRevision(ctx context.Context, databaseID int, tit
 func (s *Store) GetByID(ctx context.Context, id int) (*Migration, error) {
 	m := &Migration{}
 
-	query := `SELECT id, database_id, version, title, sql, status,
+	query := `SELECT id, database_id, version, title, sql, status, active,
 			created_by, executed_by, created_at, updated_at,
 			start_time, finish_time, error_message
 			FROM migrations
 			WHERE id = $1`
 
-	err := s.pool.QueryRow(ctx, query, id).Scan(&m.ID, &m.DatabaseID, &m.Version, &m.Title, &m.SQL, &m.Status,
+	err := s.pool.QueryRow(ctx, query, id).Scan(&m.ID, &m.DatabaseID, &m.Version, &m.Title, &m.SQL, &m.Status, &m.Active,
 		&m.CreatedBy, &m.ExecutedBy, &m.CreatedAt, &m.UpdatedAt, &m.StartTime, &m.FinishTime, &m.ErrorMessage)
 
 	if err != nil {
