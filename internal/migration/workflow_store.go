@@ -888,3 +888,14 @@ func (s *Store) GetLatestDownExecution(ctx context.Context, migrationID int) (*E
 	}
 	return e, err
 }
+
+func (s *Store) HasOlderInactiveMigration(ctx context.Context, databaseID int, migrationID int) (bool, error) {
+	var exists bool
+	err := s.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM migrations
+			WHERE database_id = $1 AND id < $2 AND active = false
+		)
+	`, databaseID, migrationID).Scan(&exists)
+	return exists, err
+}

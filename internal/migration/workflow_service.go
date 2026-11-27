@@ -368,6 +368,13 @@ func (s *Service) RequestForward(ctx context.Context, userID, migrationID int) (
 	if err := s.checkAccess(ctx, userID, m.DatabaseID, true); err != nil {
 		return nil, err
 	}
+	olderInactive, err := s.store.HasOlderInactiveMigration(ctx, m.DatabaseID, m.ID)
+	if err != nil {
+		return nil, err
+	}
+	if olderInactive {
+		return nil, fmt.Errorf("%w: cannot forward out of order; older migrations must be forwarded first", ErrInvalidState)
+	}
 	down, err := s.store.GetLatestDownExecution(ctx, migrationID)
 	if err != nil {
 		return nil, err
@@ -396,6 +403,13 @@ func (s *Service) ExecuteForward(ctx context.Context, userID, migrationID int, t
 	}
 	if err := s.checkAccess(ctx, userID, m.DatabaseID, true); err != nil {
 		return nil, err
+	}
+	olderInactive, err := s.store.HasOlderInactiveMigration(ctx, m.DatabaseID, m.ID)
+	if err != nil {
+		return nil, err
+	}
+	if olderInactive {
+		return nil, fmt.Errorf("%w: cannot forward out of order; older migrations must be forwarded first", ErrInvalidState)
 	}
 	blocked, status, err := s.store.HasBlockingExecution(ctx, m.DatabaseID)
 	if err != nil {

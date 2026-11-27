@@ -338,13 +338,20 @@ func (app *application) writeMigrationDetail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if m.Status == migration.StatusExecuted && !m.Active {
-		var downCount int
-		if err := app.stores.pgPool.QueryRow(r.Context(), `SELECT COUNT(*) FROM executions WHERE migration_id=$1 AND action='down' AND status='success' AND NOT EXISTS (SELECT 1 FROM executions f WHERE f.rollback_of=executions.id AND f.action='forward' AND f.status='success')`, m.ID).Scan(&downCount); err != nil {
-			app.writeAPIError(w, err)
+		olderInactive, olderErr := app.migStore.HasOlderInactiveMigration(r.Context(), m.DatabaseID, m.ID)
+		if olderErr != nil {
+			app.writeAPIError(w, olderErr)
 			return
 		}
-		if downCount > 0 {
-			allowed = append(allowed, "forward")
+		if !olderInactive {
+			var downCount int
+			if err := app.stores.pgPool.QueryRow(r.Context(), `SELECT COUNT(*) FROM executions WHERE migration_id=$1 AND action='down' AND status='success' AND NOT EXISTS (SELECT 1 FROM executions f WHERE f.rollback_of=executions.id AND f.action='forward' AND f.status='success')`, m.ID).Scan(&downCount); err != nil {
+				app.writeAPIError(w, err)
+				return
+			}
+			if downCount > 0 {
+				allowed = append(allowed, "forward")
+			}
 		}
 	}
 	detail.AllowedActions = allowed
