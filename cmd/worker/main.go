@@ -37,13 +37,13 @@ func main() {
 		_ = shutdownTracing(flushCtx)
 	}()
 
-	postgresURL := envOrDefault("POSTGRES_DATABASE_URL", store.PostgresAppURL(
+	postgresURL := store.PostgresAppURL(
 		envOrDefault("POSTGRES_HOST", "localhost"),
 		envIntOrDefault("POSTGRES_PORT", 5433),
 		envOrDefault("POSTGRES_DB", "harrow_db"),
 		envOrDefault("POSTGRES_USER", "harrow"),
 		os.Getenv("POSTGRES_PASSWORD"),
-	))
+	)
 
 	initCtx, cancelInit := context.WithTimeout(rootCtx, 30*time.Second)
 	postgresDB, err := store.OpenDB(initCtx, "postgresql", postgresURL)

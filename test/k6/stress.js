@@ -3,7 +3,8 @@ import { check, fail, sleep } from "k6";
 import exec from "k6/execution";
 import { Counter, Gauge, Rate, Trend } from "k6/metrics";
 
-const baseURL = (__ENV.BASE_URL || "http://localhost:5173").replace(/\/+$/, "");
+const frontendPort = __ENV.FRONTEND_PORT || "5173";
+const baseURL = `http://127.0.0.1:${frontendPort}`;
 if (!/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(baseURL)) {
   throw new Error("Stress tests are restricted to localhost.");
 }
@@ -13,7 +14,7 @@ if (testCase !== "same_database" && testCase !== "different_databases") {
   throw new Error("K6_CASE must be same_database or different_databases.");
 }
 
-const fixturePath = __ENV.K6_FIXTURES || "./fixtures.local.json";
+const fixturePath = "./fixtures.local.json";
 const fixtureData = JSON.parse(open(fixturePath));
 const jobs = fixtureData[testCase];
 if (!Array.isArray(jobs) || jobs.length === 0) {
@@ -42,20 +43,15 @@ if (testCase === "different_databases" && databaseIDs.size < 2) {
 
 const normalVUs = Number(__ENV.K6_NORMAL_VUS || 2);
 const stageSeconds = Number(__ENV.K6_STAGE_SECONDS || 30);
-const apiP95Limit = Number(__ENV.API_P95_MS || 1000);
-const apiErrorLimit = Number(__ENV.API_ERROR_RATE_LIMIT || 0.01);
-const jobSuccessMinimum = Number(__ENV.JOB_SUCCESS_RATE_MIN || 0.95);
-const pollIntervalSeconds = Number(__ENV.POLL_INTERVAL_SECONDS || 1);
-const jobTimeoutMs = Number(__ENV.JOB_TIMEOUT_MS || 600000);
+const apiP95Limit = 1000;
+const apiErrorLimit = 0.01;
+const jobSuccessMinimum = 0.95;
+const pollIntervalSeconds = 1;
+const jobTimeoutMs = 600000;
 
 if (!Number.isInteger(normalVUs) || normalVUs < 1 ||
-    !Number.isInteger(stageSeconds) || stageSeconds < 1 ||
-    !Number.isFinite(apiP95Limit) || apiP95Limit <= 0 ||
-    !Number.isFinite(apiErrorLimit) || apiErrorLimit < 0 || apiErrorLimit > 1 ||
-    !Number.isFinite(jobSuccessMinimum) || jobSuccessMinimum < 0 || jobSuccessMinimum > 1 ||
-    !Number.isFinite(pollIntervalSeconds) || pollIntervalSeconds <= 0 ||
-    !Number.isFinite(jobTimeoutMs) || jobTimeoutMs <= 0) {
-  throw new Error("Invalid k6 load, threshold, or polling configuration.");
+    !Number.isInteger(stageSeconds) || stageSeconds < 1) {
+  throw new Error("Invalid k6 load configuration.");
 }
 
 const apiRequestCount = new Counter("api_requests_measured");

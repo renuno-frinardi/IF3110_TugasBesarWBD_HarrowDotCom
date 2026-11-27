@@ -31,13 +31,13 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
-	pgURL := envOrDefault("POSTGRES_DATABASE_URL", store.PostgresAppURL(
+	pgURL := store.PostgresAppURL(
 		envOrDefault("POSTGRES_HOST", "localhost"),
 		envIntOrDefault("POSTGRES_PORT", 5433),
 		envOrDefault("POSTGRES_DB", "harrow_db"),
 		envOrDefault("POSTGRES_USER", "harrow"),
 		os.Getenv("POSTGRES_PASSWORD"),
-	))
+	)
 
 	sqlDB, err := store.OpenDB(ctx, "postgresql", pgURL)
 	if err != nil {

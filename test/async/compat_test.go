@@ -34,55 +34,39 @@ func openAsyncTestPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	_ = godotenv.Load("../../.env")
 
-	testURL := strings.TrimSpace(os.Getenv("TEST_DATABASE_URL"))
-	if testURL == "" {
-		baseHost := envOr("POSTGRES_HOST", "localhost")
-		basePort := envIntOr("POSTGRES_PORT", 5433)
-		baseDB := envOr("POSTGRES_DB", "harrow_db")
-		baseUser := envOr("POSTGRES_USER", "harrow")
-		basePass := os.Getenv("POSTGRES_PASSWORD")
+	baseHost := envOr("POSTGRES_HOST", "localhost")
+	basePort := envIntOr("POSTGRES_PORT", 5433)
+	baseDB := envOr("POSTGRES_DB", "harrow_db")
+	testDBName := envOr("POSTGRES_TEST_DB", "harrow_db_test")
+	baseUser := envOr("POSTGRES_USER", "harrow")
+	basePass := os.Getenv("POSTGRES_PASSWORD")
 
-		adminURL := os.Getenv("POSTGRES_DATABASE_URL")
-		if adminURL == "" {
-			adminURL = store.PostgresAppURL(baseHost, basePort, baseDB, baseUser, basePass)
-		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		adminConn, err := pgx.Connect(ctx, adminURL)
-		cancel()
-		if err != nil {
-			if os.Getenv("REQUIRE_INTEGRATION_DB") == "1" {
-				t.Fatalf("PostgreSQL integration DB is required but unreachable: %v", err)
-			}
-			t.Skipf("skipping integration test: PostgreSQL is not reachable (%v)", err)
-		}
-
-		testDBName := baseDB
-		if !strings.HasSuffix(testDBName, "_test") {
-			testDBName = testDBName + "_test"
-		}
-		var exists bool
-		_ = adminConn.QueryRow(context.Background(), `SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1)`, testDBName).Scan(&exists)
-		if !exists {
-			_, _ = adminConn.Exec(context.Background(), `CREATE DATABASE "`+strings.ReplaceAll(testDBName, `"`, `""`)+`"`)
-		}
-		_ = adminConn.Close(context.Background())
-
-		cfg, parseErr := pgx.ParseConfig(adminURL)
-		if parseErr != nil {
-			t.Fatalf("failed to parse admin postgres URL: %v", parseErr)
-		}
-		testURL = store.PostgresAppURL(cfg.Host, int(cfg.Port), testDBName, cfg.User, cfg.Password)
+	if !strings.HasSuffix(testDBName, "_test") {
+		testDBName = testDBName + "_test"
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	adminURL := store.PostgresAppURL(baseHost, basePort, baseDB, baseUser, basePass)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	adminConn, err := pgx.Connect(ctx, adminURL)
+	cancel()
+	if err != nil {
+		t.Skipf("skipping integration test: PostgreSQL is not reachable (%v)", err)
+	}
+
+	var exists bool
+	_ = adminConn.QueryRow(context.Background(), `SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1)`, testDBName).Scan(&exists)
+	if !exists {
+		_, _ = adminConn.Exec(context.Background(), `CREATE DATABASE "`+strings.ReplaceAll(testDBName, `"`, `""`)+`"`)
+	}
+	_ = adminConn.Close(context.Background())
+
+	testURL := store.PostgresAppURL(baseHost, basePort, testDBName, baseUser, basePass)
+
+	ctx, cancel = context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
 	sqlDB, err := store.OpenDB(ctx, "postgresql", testURL)
 	if err != nil {
-		if os.Getenv("REQUIRE_INTEGRATION_DB") == "1" {
-			t.Fatalf("failed to open test PostgreSQL DB: %v", err)
-		}
 		t.Skipf("skipping integration test: %v", err)
 	}
 	if err := store.RunMigrations(ctx, sqlDB); err != nil {

@@ -4,12 +4,15 @@ import { defineConfig, loadEnv } from 'vite'
 
 export default defineConfig(({ mode }) => {
   const root = fileURLToPath(new URL('..', import.meta.url))
-  const env = loadEnv(mode, root, ['HARROW_API_URL', 'APP_PORT', 'PORT'])
-  const target = env.HARROW_API_URL || `http://127.0.0.1:${env.APP_PORT || env.PORT || '8080'}`
+  const env = loadEnv(mode, root, ['APP_PORT', 'FRONTEND_PORT'])
+  const appPort = env.APP_PORT || '8080'
+  const frontendPort = Number(env.FRONTEND_PORT) || 5173
+  const target = `http://127.0.0.1:${appPort}`
 
   return {
     plugins: [react()],
     server: {
+      port: frontendPort,
       proxy: {
         '/api/': {
           target,
