@@ -161,106 +161,120 @@ export function Workspace({ path, params, data: d, session, run, post }) {
   }
 
   if (path === "/groups") {
-    return <>
+    return <div className="groups-page">
       <h1>Groups</h1>
-      <Form title="Buat group" onSave={v => post("/groups/create", v)}>
-        <Field name="name" required />
-        <Field name="description" />
-      </Form>
-      {(d.groups || []).map(g => (
-        <section key={g.ID}>
+      <details className="group-create">
+        <summary>Buat group</summary>
+        <Form button="Buat group" onSave={v => post("/groups/create", v)}>
+          <Field name="name" label="Nama group" required />
+          <Field name="description" label="Deskripsi" />
+        </Form>
+      </details>
+      {!d.groups?.length && <p>Belum ada group.</p>}
+      {(d.groups || []).map(g => {
+        const members = g.Members || [];
+        const candidates = (d.users || []).filter(u => !members.some(m => m.UserID === u.ID));
+        return <section key={g.ID} className="group-card">
           <h2>{g.Name}</h2>
-          <Form onSave={v => post("/groups/update", { ...v, group_id: g.ID })}>
-            <Field name="name" defaultValue={g.Name} required />
-            <Field name="description" defaultValue={g.Description} />
-          </Form>
-          <Form button="Tambah anggota" onSave={v =>
-            post("/groups/members/add", { ...v, group_id: g.ID })}>
-            <Field name="user_id" label="User" required choices={options(
-              (d.users || []).filter(u => !g.Members?.some(m => m.UserID === u.ID)),
-              "Username"
-            )} />
-          </Form>
-          <ul className="group-members">{(g.Members || []).map(m => (
-            <li key={m.UserID}>
-              <span>{m.Username}{" "}
-                {g.LeaderUserID === m.UserID && <strong>Leader</strong>}
-              </span>
-              <button type="button" className="remove-member danger-button"
-                aria-label={`Keluarkan ${m.Username}`}
-                onClick={() => post("/groups/members/remove", { group_id: g.ID, user_id: m.UserID })}>
-                Keluarkan
-              </button>
-            </li>
-          ))}</ul>
-          {!!g.Members?.length && (
-            <Form button="Tetapkan leader" onSave={v => run(() =>
-              api(`/v2/groups/${g.ID}/leader`, {
-                method: "PUT", json: { user_id: Number(v.user_id) },
-              }))}>
-              <Field name="user_id" label="Leader" defaultValue={g.LeaderUserID || ""}
-                choices={[["", "Pilih anggota"], ...g.Members.map(m => [m.UserID, m.Username])]}
-                required />
+          {g.Description && <p className="group-description">{g.Description}</p>}
+          <div className="group-columns">
+            <div>
+              <h3>Anggota ({members.length})</h3>
+              {members.length ? (
+                <ul className="group-members">{members.map(m => (
+                  <li key={m.UserID}>
+                    <span>{m.Username}{" "}
+                      {g.LeaderUserID === m.UserID && <strong className="group-leader">Leader</strong>}
+                    </span>
+                    <button type="button" className="remove-member"
+                      aria-label={`Keluarkan ${m.Username}`}
+                      onClick={() => post("/groups/members/remove", { group_id: g.ID, user_id: m.UserID })}>
+                      Keluarkan
+                    </button>
+                  </li>
+                ))}</ul>
+              ) : <p>Belum ada anggota.</p>}
+            </div>
+            <div className="group-controls">
+              <h3>Kelola anggota</h3>
+              {candidates.length ? (
+                <Form button="Tambah anggota" onSave={v =>
+                  post("/groups/members/add", { ...v, group_id: g.ID })}>
+                  <Field name="user_id" label="Pengguna" required choices={options(candidates, "Username")} />
+                </Form>
+              ) : <p>Tidak ada pengguna yang bisa ditambahkan.</p>}
+              {!!members.length && (
+                <Form button="Tetapkan leader" onSave={v => run(() =>
+                  api(`/v2/groups/${g.ID}/leader`, {
+                    method: "PUT", json: { user_id: Number(v.user_id) },
+                  }))}>
+                  <Field name="user_id" label="Leader" defaultValue={g.LeaderUserID || ""}
+                    choices={[["", "Pilih anggota"], ...members.map(m => [m.UserID, m.Username])]}
+                    required />
+                </Form>
+              )}
+            </div>
+          </div>
+          <details className="group-settings">
+            <summary>Pengaturan group</summary>
+            <Form onSave={v => post("/groups/update", { ...v, group_id: g.ID })}>
+              <Field name="name" label="Nama group" defaultValue={g.Name} required />
+              <Field name="description" label="Deskripsi" defaultValue={g.Description} />
             </Form>
-          )}
-          <Action confirmText={`Hapus group ${g.Name}?`}
-            onClick={() => post("/groups/delete", { group_id: g.ID })}>Hapus group</Action>
-        </section>
-      ))}
-    </>;
+            <Action className="danger-button" confirmText={`Hapus group ${g.Name}?`}
+              onClick={() => post("/groups/delete", { group_id: g.ID })}>Hapus group</Action>
+          </details>
+        </section>;
+      })}
+    </div>;
   }
 
   if (path === "/access") {
     const grants = pgOnly(d.grants);
-    return <>
-      <div className="page-heading">
-        <div>
-          <h1>Akses database</h1>
-          <p>Atur hak akses setiap group ke koneksi database.</p>
-        </div>
-        <span className="access-count">{grants.length} akses aktif</span>
+    return <div className="access-page">
+      <h1>Akses database</h1>
+      <div className="access-layout">
+        <section className="access-panel">
+          <h2>Berikan akses</h2>
+          <Form className="access-form" onSave={v => post("/access/grant", v)} button="Berikan akses">
+            <Field name="group_id" label="Group" choices={options(d.groups, "Name")} required />
+            <Field name="database_connection_id" label="Database"
+              choices={options(pgOnly(d.connections), "Name")} required />
+            <Field name="access_level" label="Hak akses" required
+              choices={[["view_only", "View"], ["view_edit", "View + Edit"]]} />
+          </Form>
+        </section>
+        <section className="access-panel">
+          <div className="access-list-heading">
+            <h2>Akses yang diberikan</h2>
+            <span className="access-count">{grants.length} akses</span>
+          </div>
+          {grants.length ? (
+            <ul className="grant-list">
+              {grants.map(row => (
+                <li key={`${row.GroupID}-${row.DatabaseConnectionID}`}>
+                  <div className="grant-target">
+                    <strong>{row.GroupName}</strong>
+                    <span>Database · {row.ConnectionName}</span>
+                  </div>
+                  <span className={`access-badge ${row.AccessLevel === "view_edit"
+                    ? "access-badge--edit" : "access-badge--view"}`}>
+                    {accessLabel(row.AccessLevel)}
+                  </span>
+                  <Action className="danger-button"
+                    confirmText={`Cabut akses ${accessLabel(row.AccessLevel)} untuk group ${row.GroupName} ke ${row.ConnectionName}?`}
+                    onClick={() => post("/access/revoke", {
+                      group_id: row.GroupID, database_connection_id: row.DatabaseConnectionID,
+                    })}>Cabut akses</Action>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="access-empty">Belum ada akses database yang diberikan.</p>
+          )}
+        </section>
       </div>
-      <Form className="access-form" title="Berikan akses baru"
-        onSave={v => post("/access/grant", v)} button="Berikan akses">
-        <p className="form-description">
-          Pilih group, database, dan tingkat izin yang akan diberikan.
-        </p>
-        <Field name="group_id" label="Group" choices={options(d.groups, "Name")} required />
-        <Field name="database_connection_id" label="Database"
-          choices={options(pgOnly(d.connections), "Name")} required />
-        <Field name="access_level" label="Hak akses" required
-          choices={[["view_only", "View"], ["view_edit", "View + Edit"]]} />
-      </Form>
-      <section className="access-list">
-        <div className="access-list-heading">
-          <div>
-            <h2>Akses yang sudah diberikan</h2>
-            <p>Kelola izin group pada setiap koneksi.</p>
-          </div>
-        </div>
-        {grants.length ? (
-          <div className="access-table">
-            <Table rows={grants} columns={[
-              ["Group", "GroupName"], ["Koneksi", "ConnectionName"],
-              ["Akses", row => {
-                const editAccess = row.AccessLevel === "view_edit";
-                return <span className={`access-badge ${editAccess
-                  ? "access-badge--edit" : "access-badge--view"}`}>
-                  {accessLabel(row.AccessLevel)}
-                </span>;
-              }],
-              ["Aksi", row => <Action className="danger-button"
-                confirmText={`Cabut akses ${accessLabel(row.AccessLevel)} untuk group ${row.GroupName}?`}
-                onClick={() => post("/access/revoke", {
-                  group_id: row.GroupID, database_connection_id: row.DatabaseConnectionID,
-                })}>Cabut akses</Action>],
-            ]} />
-          </div>
-        ) : (
-          <p className="access-empty">Belum ada akses database yang diberikan.</p>
-        )}
-      </section>
-    </>;
+    </div>;
   }
 
   if (path === "/audit-logs") {

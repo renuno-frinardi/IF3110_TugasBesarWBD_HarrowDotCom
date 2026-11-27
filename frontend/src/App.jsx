@@ -127,76 +127,77 @@ export default function App() {
 
   return (
     <>
-      <header>
-        <a href={link("/")} className="brand">Harrow</a>
+      {!publicPage && session && (
+        <header>
+          <a href={link("/")} className="brand">Harrow</a>
+          <button
+            type="button"
+            className="menu-toggle"
+            aria-controls="main-menu"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen(open => !open)}
+          >
+            Menu
+          </button>
 
-        {!publicPage && session && (
-          <>
+          <div id="main-menu" data-open={menuOpen}>
+            <nav
+              id="main-nav"
+              aria-label="Navigasi utama"
+              onClick={event => {
+                if (event.target.closest("a")) setMenuOpen(false);
+              }}
+            >
+              <a href={link("/")} aria-current={path === "/" ? "page" : undefined}>
+                Dashboard
+              </a>
+              <a href={link("/connections")}
+                aria-current={path.startsWith("/connections") ? "page" : undefined}>
+                Koneksi
+              </a>
+              <a href={link("/reviews")}
+                aria-current={path === "/reviews" ? "page" : undefined}>
+                Review Saya
+              </a>
+
+              {session.is_admin && (
+                <>
+                  <a href={link("/users")}
+                    aria-current={path === "/users" ? "page" : undefined}>Users</a>
+                  <a href={link("/groups")}
+                    aria-current={path === "/groups" ? "page" : undefined}>Groups</a>
+                  <a href={link("/access")}
+                    aria-current={path === "/access" ? "page" : undefined}>Akses</a>
+                  <a href={link("/audit-logs")}
+                    aria-current={path === "/audit-logs" ? "page" : undefined}>
+                    Audit Logs
+                  </a>
+                </>
+              )}
+            </nav>
             <button
               type="button"
-              className="menu-toggle"
-              aria-controls="main-menu"
-              aria-expanded={menuOpen}
-              onClick={() => setMenuOpen(open => !open)}
+              className="logout-button"
+              disabled={busy}
+              onClick={() => run(async () => {
+                await api("/logout", { method: "POST", form: {} });
+                expire();
+              })}
             >
-              Menu
+              Keluar
             </button>
-
-            <div id="main-menu" data-open={menuOpen}>
-              <nav
-                id="main-nav"
-                aria-label="Navigasi utama"
-                onClick={event => {
-                  if (event.target.closest("a")) setMenuOpen(false);
-                }}
-              >
-                <a href={link("/")} aria-current={path === "/" ? "page" : undefined}>
-                  Dashboard
-                </a>
-                <a href={link("/connections")}
-                  aria-current={path.startsWith("/connections") ? "page" : undefined}>
-                  Koneksi
-                </a>
-                <a href={link("/reviews")}
-                  aria-current={path === "/reviews" ? "page" : undefined}>
-                  Review Saya
-                </a>
-
-                {session.is_admin && (
-                  <>
-                    <a href={link("/users")}
-                      aria-current={path === "/users" ? "page" : undefined}>Users</a>
-                    <a href={link("/groups")}
-                      aria-current={path === "/groups" ? "page" : undefined}>Groups</a>
-                    <a href={link("/access")}
-                      aria-current={path === "/access" ? "page" : undefined}>Akses</a>
-                    <a href={link("/audit-logs")}
-                      aria-current={path === "/audit-logs" ? "page" : undefined}>
-                      Audit Logs
-                    </a>
-                  </>
-                )}
-              </nav>
-              <button
-                type="button"
-                className="logout-button"
-                disabled={busy}
-                onClick={() => run(async () => {
-                  await api("/logout", { method: "POST", form: {} });
-                  expire();
-                })}
-              >
-                Keluar
-              </button>
-            </div>
-          </>
-        )}
-      </header>
+          </div>
+        </header>
+      )}
 
       <main>
         {error && <p role="alert">{error}</p>}
         {notice && <p role="status">{notice}</p>}
-        {!ready && !error && <p role="status">Memuat…</p>}
+        {!ready && !error && (
+          <div className="page-loader" role="status" aria-label="Memuat halaman">
+            <span /><span /><span />
+          </div>
+        )}
         {!ready && error && (
           <button onClick={() => setRefresh(n => n + 1)}>Coba lagi</button>
         )}
