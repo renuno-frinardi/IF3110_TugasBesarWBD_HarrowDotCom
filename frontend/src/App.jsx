@@ -3,6 +3,7 @@ import { api, setCSRF } from "./api";
 import { Field, Form, link } from "./ui";
 import { Workspace } from "./Workspace";
 import { MigrationScreen } from "./MigrationScreen";
+import logo from "./assets/logo.png";
 import "./App.css";
 
 function currentRoute() {
@@ -203,23 +204,38 @@ export default function App() {
         {ready && (
           <fieldset disabled={busy} className="screen" key={route}>
             {publicPage ? (
-              <>
-                <h1>{path === "/login" ? "Masuk" : "Buat akun"}</h1>
-                <Form onSave={body => post(path, body)}
-                      button={path === "/login" ? "Masuk" : "Daftar"}>
-                  <Field name="username" required autoComplete="username" />
-                  {path === "/signup" && <Field name="email" type="email" />}
-                  <Field name="password" type="password" required
-                    autoComplete={path === "/login" ? "current-password" : "new-password"} />
-                  {path === "/signup" && (
-                    <Field name="confirm_password" label="Konfirmasi password"
-                      type="password" required autoComplete="new-password" />
-                  )}
-                </Form>
-                <a href={link(path === "/login" ? "/signup" : "/login")}>
-                  {path === "/login" ? "Buat akun" : "Kembali ke login"}
-                </a>
-              </>
+              <div className="auth-page">
+                <section className="auth-card">
+                  <img className="auth-logo" src={logo} alt="HarrowDotCom" />
+                  <p className="auth-eyebrow">DATABASE WORKSPACE</p>
+                  <h1>{path === "/login" ? "Selamat datang kembali" : "Buat akun"}</h1>
+                  <p className="auth-description">
+                    {path === "/login"
+                      ? "Masuk untuk mengelola koneksi dan migrasi database Anda."
+                      : "Daftar untuk mulai mengelola koneksi dan migrasi database Anda."}
+                  </p>
+                  <Form className="auth-form" onSave={body => post(path, body)}
+                        button={path === "/login" ? "Masuk" : "Buat akun"}>
+                    <Field name="username" label="Nama pengguna" required autoComplete="username" />
+                    {path === "/signup" && <Field name="email" label="Email" type="email" />}
+                    <Field name="password" label="Kata sandi" type="password" required
+                      autoComplete={path === "/login" ? "current-password" : "new-password"} />
+                    {path === "/signup" && (
+                      <Field name="confirm_password" label="Konfirmasi kata sandi"
+                        type="password" required autoComplete="new-password" />
+                    )}
+                  </Form>
+                  <div className="auth-switch">
+                    <p>
+                      {path === "/login" ? "Belum punya akun?" : "Sudah punya akun?"}
+                    </p>
+                    <a className="button-link button-link--secondary auth-switch-button"
+                      href={link(path === "/login" ? "/signup" : "/login")}>
+                      {path === "/login" ? "Buat akun" : "Masuk"}
+                    </a>
+                  </div>
+                </section>
+              </div>
             ) : migrationPages.has(path) ? (
               <MigrationScreen {...{ path, params, run, expire }}
                 data={page.data} />
