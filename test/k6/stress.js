@@ -1,7 +1,7 @@
 import http from "k6/http";
 import { check, fail, sleep } from "k6";
 import exec from "k6/execution";
-import { Counter, Rate, Trend } from "k6/metrics";
+import { Counter, Gauge, Rate, Trend } from "k6/metrics";
 
 const baseURL = (__ENV.BASE_URL || "http://localhost:5173").replace(/\/+$/, "");
 if (!/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(baseURL)) {
@@ -41,6 +41,7 @@ if (testCase === "different_databases" && databaseIDs.size < 2) {
 }
 
 const normalVUs = Number(__ENV.K6_NORMAL_VUS || 2);
+const stageSeconds = Number(__ENV.K6_STAGE_SECONDS || 30);
 const apiP95Limit = Number(__ENV.API_P95_MS || 1000);
 const apiErrorLimit = Number(__ENV.API_ERROR_RATE_LIMIT || 0.01);
 const jobSuccessMinimum = Number(__ENV.JOB_SUCCESS_RATE_MIN || 0.95);
@@ -48,6 +49,7 @@ const pollIntervalSeconds = Number(__ENV.POLL_INTERVAL_SECONDS || 1);
 const jobTimeoutMs = Number(__ENV.JOB_TIMEOUT_MS || 600000);
 
 if (!Number.isInteger(normalVUs) || normalVUs < 1 ||
+    !Number.isInteger(stageSeconds) || stageSeconds < 1 ||
     !Number.isFinite(apiP95Limit) || apiP95Limit <= 0 ||
     !Number.isFinite(apiErrorLimit) || apiErrorLimit < 0 || apiErrorLimit > 1 ||
     !Number.isFinite(jobSuccessMinimum) || jobSuccessMinimum < 0 || jobSuccessMinimum > 1 ||
@@ -74,16 +76,14 @@ const jobPollErrorCount = new Counter("job_poll_errors");
 const fixtureExhaustedCount = new Counter("fixture_exhausted");
 const jobTimestampErrorCount = new Counter("job_timestamp_errors");
 
-const phaseStages = [
-  { duration: "30s", target: normalVUs },
-  { duration: "30s", target: normalVUs },
-  { duration: "30s", target: normalVUs * 2 },
-  { duration: "30s", target: normalVUs * 2 },
-  { duration: "30s", target: normalVUs * 4 },
-  { duration: "30s", target: normalVUs * 4 },
-  { duration: "30s", target: normalVUs * 2 },
-  { duration: "30s", target: normalVUs },
-  { duration: "30s", target: 0 },
+const stageDuration = new Gauge("phase_window_seconds");
+const phases = [
+  ["ramp_to_normal", 1], ["normal", 1],
+  ["ramp_to_2x", 2], ["2x", 2],
+  ["ramp_to_4x", 4], ["4x", 4],
+  ["ramp_down_to_2x", 2], ["recovery_2x", 2],
+  ["ramp_down_to_normal", 1], ["recovery_normal", 1],
+  ["drain", 0],
 ];
 
 export const options = {
@@ -91,7 +91,7 @@ export const options = {
     migration_stress: {
       executor: "ramping-vus",
       startVUs: 0,
-      stages: phaseStages,
+      stages: phases.map(([, multiplier]) => ({ duration: `${stageSeconds}s`, target: normalVUs * multiplier })),
       gracefulRampDown: "10m",
       gracefulStop: "10m",
     },
@@ -101,26 +101,23 @@ export const options = {
     api_response_time: [`p(95)<${apiP95Limit}`],
     api_error_rate: [`rate<${apiErrorLimit}`],
     job_success_rate: [`rate>${jobSuccessMinimum}`],
+    jobs_terminal: ["count>0"],
+    job_timeouts: ["count==0"],
+    job_timestamp_errors: ["count==0"],
     jobs_accepted: ["count>0"],
     fixture_exhausted: ["count==0"],
   },
 };
 
 export function setup() {
-  return { startedAt: Date.now() };
+  for (const [level] of phases) {
+    stageDuration.add(stageSeconds, { load_level: level });
+  }
 }
 
-function loadLevel(startedAt) {
-  const elapsedSeconds = (Date.now() - startedAt) / 1000;
-  if (elapsedSeconds < 30) return "ramp_to_normal";
-  if (elapsedSeconds < 60) return "normal";
-  if (elapsedSeconds < 90) return "ramp_to_2x";
-  if (elapsedSeconds < 120) return "2x";
-  if (elapsedSeconds < 150) return "ramp_to_4x";
-  if (elapsedSeconds < 180) return "4x";
-  if (elapsedSeconds < 210) return "recovery_2x";
-  if (elapsedSeconds < 240) return "recovery_normal";
-  return "drain";
+function loadLevel(time = Date.now()) {
+  const index = Math.max(0, Math.floor((time - exec.scenario.startTime) / (stageSeconds * 1000)));
+  return index < phases.length ? phases[index][0] : "after_drain";
 }
 
 function recordApi(response, ok, endpoint, level) {
@@ -144,35 +141,36 @@ function recordDuration(metric, start, end, tags) {
   const endMs = Date.parse(end);
   if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) {
     jobTimestampErrorCount.add(1, tags);
-    return false;
+    return;
   }
   metric.add(endMs - startMs, tags);
-  return true;
 }
 
 let csrfToken = "";
 let sessionCookieName = "";
 let sessionCookie = "";
-function authenticate(level) {
+function authenticate() {
   if (!__ENV.K6_USERNAME || !__ENV.K6_PASSWORD) {
     throw new Error("Set K6_USERNAME and K6_PASSWORD in the environment.");
   }
 
+  const loginLevel = loadLevel();
   const login = http.post(
     `${baseURL}/api/login`,
     { username: __ENV.K6_USERNAME, password: __ENV.K6_PASSWORD },
     { headers: { Accept: "application/json" }, tags: { name: "login" } },
   );
-  recordApi(login, login.status === 200, "login", level);
+  recordApi(login, login.status === 200, "login", loginLevel);
   if (login.status !== 200) fail(`Login failed with HTTP ${login.status}.`);
 
+  const sessionLevel = loadLevel();
   const session = http.get(`${baseURL}/api/session`, {
     headers: { Accept: "application/json" },
     tags: { name: "session" },
   });
   const sessionData = parseJSON(session);
   const validSession = session.status === 200 && sessionData && sessionData.csrf_token;
-  recordApi(session, Boolean(validSession), "session", level);
+  recordApi(session, Boolean(validSession), "session", sessionLevel);
   if (!validSession) fail(`Session validation failed with HTTP ${session.status}.`);
   csrfToken = sessionData.csrf_token;
 
@@ -186,11 +184,11 @@ function terminalJob(jobData) {
   return ["success", "failed", "partial", "partially_reverted"].includes(jobData.status);
 }
 
-export default function (data) {
-  const level = loadLevel(data.startedAt);
-  if (!csrfToken) authenticate(level);
+export default function () {
+  if (!csrfToken) authenticate();
   sleep(1);
 
+  const level = loadLevel();
   const fixtureIndex = exec.scenario.iterationInTest;
   const job = jobs[fixtureIndex];
   if (!job) {
@@ -227,7 +225,7 @@ export default function (data) {
   const submitData = submitResponse.status === 202 ? parseJSON(submitResponse) : null;
   const accepted = submitResponse.status === 202 && submitData && submitData.job_id;
   const conflict = submitResponse.status === 409;
-  recordApi(submitResponse, Boolean(accepted || conflict), "migration_execute", level);
+  recordApi(submitResponse, Boolean(accepted), "migration_execute", level);
   jobConflictRate.add(conflict ? 1 : 0, { load_level: level });
   if (conflict) {
     jobConflictCount.add(1, { load_level: level });
@@ -237,12 +235,11 @@ export default function (data) {
   if (!accepted) return;
 
   const jobId = submitData.job_id;
-  const jobTags = { load_level: level };
-  jobSubmissionCount.add(1, jobTags);
+  jobSubmissionCount.add(1, { load_level: level });
   const submittedAt = Date.now();
-  let queueWaitRecorded = false;
 
   while (Date.now() - submittedAt < jobTimeoutMs) {
+    const pollLevel = loadLevel();
     const response = http.get(`${baseURL}/api/v2/jobs/${encodeURIComponent(jobId)}`, {
       headers: apiHeaders,
       cookies: { [sessionCookieName]: sessionCookie },
@@ -250,15 +247,17 @@ export default function (data) {
     });
     const jobData = parseJSON(response);
     const validResponse = response.status === 200 && jobData && jobData.status;
-    recordApi(response, Boolean(validResponse), "job_status", level);
-    if (!validResponse) break;
-
-    if (!queueWaitRecorded && jobData.started_at && jobData.created_at) {
-      recordDuration(queueWaitTime, jobData.created_at, jobData.started_at, jobTags);
-      queueWaitRecorded = true;
+    recordApi(response, Boolean(validResponse), "job_status", pollLevel);
+    if (!validResponse) {
+      jobPollErrorCount.add(1, { load_level: pollLevel });
+      sleep(pollIntervalSeconds);
+      continue;
     }
 
     if (terminalJob(jobData)) {
+      const finished = Date.parse(jobData.finished_at);
+      const jobTags = { load_level: loadLevel(Number.isFinite(finished) ? finished : Date.now()) };
+      recordDuration(queueWaitTime, jobData.created_at, jobData.started_at, jobTags);
       jobTerminalCount.add(1, jobTags);
       if (jobData.status === "success") {
         jobSuccessCount.add(1, jobTags);
@@ -283,14 +282,7 @@ export default function (data) {
     sleep(pollIntervalSeconds);
   }
 
-  if (Date.now() - submittedAt < jobTimeoutMs) {
-    jobFailureCount.add(1, jobTags);
-    jobSuccessRate.add(false, jobTags);
-    jobPollErrorCount.add(1, jobTags);
-    return;
-  }
-
-  jobFailureCount.add(1, jobTags);
+  const jobTags = { load_level: loadLevel() };
   jobSuccessRate.add(false, jobTags);
   jobTimeoutCount.add(1, jobTags);
 }

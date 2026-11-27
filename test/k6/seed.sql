@@ -4,8 +4,22 @@
 \else
 \set commit_seed false
 \endif
-\set same_count 600
-\set different_count 300
+\if :{?same_count}
+\else
+\set same_count 1300
+\endif
+\if :{?different_count}
+\else
+\set different_count 650
+\endif
+\if :{?first_db}
+\else
+\set first_db 3
+\endif
+\if :{?second_db}
+\else
+\set second_db 8
+\endif
 \pset format unaligned
 \pset tuples_only on
 \pset footer off
@@ -13,20 +27,25 @@
 
 BEGIN;
 
+CREATE TEMP TABLE k6_connections (
+    database_id INT PRIMARY KEY,
+    is_primary BOOLEAN NOT NULL
+);
+INSERT INTO k6_connections VALUES (:'first_db', TRUE), (:'second_db', FALSE);
+
 DO $$
 BEGIN
     IF current_database() <> 'harrow_db' THEN
         RAISE EXCEPTION 'Refusing to seed database %, expected local harrow_db', current_database();
     END IF;
 
-    IF NOT EXISTS (
-        SELECT 1 FROM database_connections
-        WHERE id = 3 AND db_type = 'postgresql' AND is_active
-    ) OR NOT EXISTS (
-        SELECT 1 FROM database_connections
-        WHERE id = 8 AND db_type = 'postgresql' AND is_active
-    ) THEN
-        RAISE EXCEPTION 'Expected active PostgreSQL targets 3 and 8';
+    IF (
+        SELECT COUNT(*)
+        FROM database_connections c
+        JOIN k6_connections t ON t.database_id = c.id
+        WHERE c.db_type = 'postgresql' AND c.is_active
+    ) <> 2 THEN
+        RAISE EXCEPTION 'Expected two active PostgreSQL target connections';
     END IF;
 END
 $$;
@@ -42,33 +61,28 @@ CREATE TEMP TABLE k6_targets (
 );
 
 INSERT INTO k6_targets (fixture_case, database_id, ordinal, title)
-SELECT 'same_database', 3, n, format('k6-%s-same-%s', run_key, n)
+SELECT 'same_database', target.database_id, n, format('k6-%s-same-%s', run_key, n)
 FROM k6_seed_run
-CROSS JOIN generate_series(1, :same_count) AS series(n);
+CROSS JOIN (SELECT database_id FROM k6_connections WHERE is_primary) AS target
+CROSS JOIN generate_series(1, :'same_count'::INT) AS series(n);
 
 INSERT INTO k6_targets (fixture_case, database_id, ordinal, title)
 SELECT 'different_databases', target.database_id, n,
        format('k6-%s-diff-%s-%s', run_key, target.database_id, n)
 FROM k6_seed_run
-CROSS JOIN (VALUES (3), (8)) AS target(database_id)
-CROSS JOIN generate_series(1, :different_count) AS series(n);
+CROSS JOIN k6_connections AS target
+CROSS JOIN generate_series(1, :'different_count'::INT) AS series(n);
 
 CREATE TEMP TABLE k6_actor AS
 SELECT MIN(u.id)::INT AS user_id
 FROM users u
 WHERE u.is_active
-  AND EXISTS (
-      SELECT 1 FROM user_database_access a
-      WHERE a.user_id = u.id
-        AND a.database_connection_id = 3
-        AND a.access_level = 'view_edit'
-  )
-  AND EXISTS (
-      SELECT 1 FROM user_database_access a
-      WHERE a.user_id = u.id
-        AND a.database_connection_id = 8
-        AND a.access_level = 'view_edit'
-  );
+  AND (
+      SELECT COUNT(*)
+      FROM user_database_access a
+      JOIN k6_connections t ON t.database_id = a.database_connection_id
+      WHERE a.user_id = u.id AND a.access_level = 'view_edit'
+  ) = 2;
 
 DO $$
 BEGIN

@@ -227,80 +227,70 @@ Login menggunakan akun admin yang telah dibuat di langkah 4.
 
 ## Bonus: Stress Testing dengan k6
 
-Script `test/k6/stress.js` menguji API dan eksekusi migration secara bersamaan. Beban naik dari normal ke 2x dan 4x, lalu turun untuk mengukur pemulihan. Dua skenario:
-- `same_database`: semua job memakai satu database.
-- `different_databases`: job berjalan pada dua database PostgreSQL yang berbeda.
+[Script k6](test/k6/stress.js) menjalankan `GET` daftar migration dan `POST` eksekusi migration secara bersamaan. Setiap VU login, mengambil satu fixture per iterasi, dan polling job yang diterima sampai status terminal. `same_database` memakai satu database PostgreSQL. `different_databases` bergantian memakai dua database PostgreSQL.
 
-### Menjalankan test
+Beban normal awal adalah 2 virtual user (VU). Tes naik ke 4 lalu 8 VU, turun ke 4 lalu 2 VU, kemudian berhenti. Setiap tingkat naik dan pemulihan punya fase stabil tersendiri. Default setiap fase 30 detik. Atur `K6_NORMAL_VUS` sesuai beban normal tim dan `K6_STAGE_SECONDS` untuk mengubah durasi per fase.
 
-1. Pastikan k6 terpasang, lalu jalankan PostgreSQL, server, dan worker:
+### Menjalankan pengujian
 
-   ```powershell
-   docker compose up -d postgres server worker
-   ```
+1. Siapkan lingkungan lokal khusus pengujian. Jalankan server dan worker beserta PostgreSQL. Dari folder `frontend`, jalankan Vite sebagai proxy API.
 
-   Di terminal lain, jalankan frontend:
-
-   ```powershell
+   ~~~bash
+   docker compose up -d --build postgres server worker
    cd frontend
-   npm.cmd run dev -- --host 127.0.0.1
-   ```
+   npm run dev -- --host 127.0.0.1
+   ~~~
 
-2. Siapkan dua target PostgreSQL yang berbeda secara fisik dan beri akun test akses `View + Edit`. Worker tidak mendukung migration ke MariaDB. Pastikan host koneksi dapat dijangkau dari server (`postgres:5432` jika server/worker di Docker; `127.0.0.1:5433` jika berjalan di host). Pada setup lokal yang dipakai untuk hasil di bawah, targetnya adalah database ID `3` dan `8`. Jika ID berbeda, sesuaikan `test/k6/seed.sql`.
+2. Tambahkan dua koneksi ke **nama database PostgreSQL berbeda**. Untuk server dan worker di Docker, gunakan host `postgres` dan port `5432` jika database target berada di layanan tersebut. Beri akun uji akses **View + Edit** di kedua koneksi. Dari root repo, ganti `first_db` dan `second_db` dengan ID koneksi uji.
 
-3. Buat fixture migration sekali pakai dan approved:
+   ~~~bash
+   docker compose cp test/k6/seed.sql postgres:/tmp/k6-seed.sql
+   docker compose exec -T postgres psql -U harrow -d harrow_db -v commit_seed=true -v first_db=3 -v second_db=8 -f /tmp/k6-seed.sql
+   docker compose cp postgres:/tmp/k6-fixtures.json test/k6/fixtures.local.json
+   ~~~
 
-   ```powershell
-   docker compose cp test\k6\seed.sql postgres:/tmp/k6-seed.sql
-   docker compose exec -T postgres psql -U harrow -d harrow_db -v commit_seed=true -f /tmp/k6-seed.sql
-   docker compose cp postgres:/tmp/k6-fixtures.json test\k6\fixtures.local.json
-   docker compose exec -T postgres rm -f /tmp/k6-seed.sql /tmp/k6-fixtures.json
-   ```
+   Seed menyimpan migration, revisi, dan approval di database aplikasi. SQL migration adalah `SELECT 1;`. Defaultnya 1.300 fixture per skenario untuk durasi 30 detik dan 2 VU normal. Sediakan fixture baru untuk setiap pengulangan skenario. Naikkan `-v same_count=N` dan `-v different_count=N` jika jumlah VU atau durasi bertambah. `different_count` berlaku per database.
 
-   Seed memakai `SELECT 1;` sehingga tidak mengubah data target, tetapi menambah record permanen ke database aplikasi. Seed membuat migration approved langsung; ini menguji enqueue dan worker, bukan alur review. Jalankan ulang seed sebelum test berikutnya karena setiap migration hanya boleh dipakai sekali.
+3. Dari root repo, jalankan kedua skenario. Contoh memakai Bash atau Zsh. Simpan output k6 dan ringkasan per fase.
 
-4. Di PowerShell, atur kredensial akun test dan jalankan kedua skenario:
+   ~~~bash
+   export BASE_URL=http://127.0.0.1:5173 K6_USERNAME=akun-test K6_NORMAL_VUS=2
+   read -s K6_PASSWORD
+   export K6_PASSWORD
 
-   ```powershell
-   $env:BASE_URL = "http://127.0.0.1:5173"
-   $env:K6_USERNAME = "akun-test"
-   $env:K6_PASSWORD = "password-test"
-   $env:K6_NORMAL_VUS = "2"
-
-   $env:K6_CASE = "same_database"
-   k6 run --summary-export=test/k6/results-same-database.json test/k6/stress.js
-
-   $env:K6_CASE = "different_databases"
-   k6 run --summary-export=test/k6/results-different-databases.json test/k6/stress.js
-   ```
-
-Default threshold: API p95 `< 1000 ms`, error API `< 1%`, dan job sukses `> 95%`. `202 Accepted` hanya berarti job diterima. Job dihitung sukses setelah status terminal berhasil. HTTP 409 dicatat terpisah sebagai konflik enqueue dan tidak masuk ke metrik error API.
+   K6_CASE=same_database k6 run --out json=test/k6/results-after-same.json test/k6/stress.js
+   K6_CASE=different_databases k6 run --out json=test/k6/results-after-different.json test/k6/stress.js
+   python3 test/k6/report.py test/k6/results-after-same.json test/k6/results-after-different.json
+   unset K6_PASSWORD
+   ~~~
 
 ### Hasil pengujian
 
-Run menggunakan 2 VU normal (maksimum 8 VU). Semua job yang diterima selesai sukses, tetapi kedua skenario **gagal threshold p95 API**.
+Run menggunakan 2 VU normal (maksimum 8 VU) dengan 8 detik per fase. Semua job yang diterima selesai sukses dan kedua skenario lulus threshold p95 API. Skenario database sama gagal threshold error API 1% karena respons HTTP 409.
 
 | Skenario | API req/s | API p50 / p95 | Error API | Job sukses | Queue wait p95 | Durasi job p95 | HTTP 409 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Database sama | 2.042 | 43.5 / 5158.6 ms | 0% | 134/134 (100%) | 25.3 ms | 1099.1 ms | 68 |
-| Database berbeda | 3.538 | 25.6 / 4268.0 ms | 0% | 286/286 (100%) | 23 ms | 1066.8 ms | 42 |
+| Database sama | 6.97 | 4.49 / 13.48 ms | 4.40% | 137/137 (100%) | 6.00 ms | 13.20 ms | 27 |
+| Database berbeda | 7.60 | 4.05 / 12.46 ms | 0.45% | 165/165 (100%) | 4.00 ms | 12.00 ms | 3 |
 
-Per tingkat beban (throughput dihitung per jendela 30 detik):
+Throughput per tingkat beban dihitung per jendela 8 detik. Durasi job dihitung dari saat masuk antrean hingga selesai.
 
 | Tahap | API p50 / p95 | API req/s | Error | Job sukses/s | Queue wait p95 | Durasi job p95 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Sama — normal | 38.1 / 2626.3 ms | 1.833 | 0% | 0.567 | 15.8 ms | 1070.4 ms |
-| Sama — 2x | 39.9 / 3473.6 ms | 2.400 | 0% | 0.533 | 21.2 ms | 1074.2 ms |
-| Sama — 4x | 54.0 / 5340.8 ms | 3.167 | 0% | 0.633 | 27.1 ms | 1104.4 ms |
-| Sama — pemulihan 2x | 47.0 / 5244.2 ms | 2.633 | 0% | 0.567 | 26.2 ms | 1129 ms |
-| Sama — pemulihan normal | 42.0 / 3412 ms | 2.133 | 0% | 0.600 | 17.7 ms | 1068.5 ms |
-| Berbeda — normal | 19.3 / 2464.2 ms | 2.667 | 0% | 0.867 | 15.2 ms | 1048.5 ms |
-| Berbeda — 2x | 22.6 / 3245.2 ms | 4.067 | 0% | 1.200 | 20.2 ms | 1055.8 ms |
-| Berbeda — 4x | 31.1 / 4873.1 ms | 5.633 | 0% | 1.567 | 28.4 ms | 1077.6 ms |
-| Berbeda — pemulihan 2x | 29.6 / 4646.7 ms | 5.167 | 0% | 1.500 | 24.6 ms | 1073.6 ms |
-| Berbeda — pemulihan normal | 22.4 / 3016.3 ms | 3.600 | 0% | 1.133 | 18 ms | 1053.8 ms |
+| Sama — normal | 4.97 / 11.79 ms | 4.12 | 0.00% | 1.00 | 6.00 ms | 16.25 ms |
+| Sama — 2x | 4.16 / 8.37 ms | 8.12 | 0.00% | 2.00 | 3.00 ms | 10.25 ms |
+| Sama — 4x | 4.54 / 13.33 ms | 14.12 | 7.96% | 2.88 | 3.00 ms | 10.90 ms |
+| Sama — pemulihan 2x | 4.60 / 11.14 ms | 7.75 | 3.23% | 1.75 | 3.00 ms | 11.00 ms |
+| Sama — pemulihan normal | 4.81 / 8.95 ms | 3.50 | 14.29% | 0.62 | 3.00 ms | 9.80 ms |
+| Berbeda — normal | 4.29 / 9.38 ms | 4.12 | 0.00% | 1.00 | 4.95 ms | 12.60 ms |
+| Berbeda — 2x | 3.79 / 12.92 ms | 8.12 | 0.00% | 2.00 | 4.25 ms | 12.25 ms |
+| Berbeda — 4x | 3.99 / 12.23 ms | 16.00 | 1.56% | 3.88 | 4.50 ms | 11.50 ms |
+| Berbeda — pemulihan 2x | 3.85 / 8.11 ms | 8.75 | 0.00% | 2.25 | 4.15 ms | 12.75 ms |
+| Berbeda — pemulihan normal | 4.09 / 9.30 ms | 4.50 | 0.00% | 1.12 | 3.00 ms | 10.60 ms |
 
-P95 meningkat saat beban naik dan turun saat pemulihan, tetapi tetap di atas target 1 detik. Queue wait p95 hanya 23–25 ms. Hasil ini menunjukkan keterlambatan utama ada pada respons API, bukan antrean worker. Konflik 409 berjumlah 68 pada skenario satu database dan 42 pada dua database.
+P95 tetap di bawah target 1 detik pada semua tingkat beban dan kembali ke sekitar 9 ms saat beban turun ke normal. Queue wait p95 keseluruhan 4–6 ms. Konflik 409 berjumlah 27 pada skenario database sama dan 3 pada skenario database berbeda. Konflik masih muncul pada fase pemulihan database sama.
+
+Setelah penambahan indeks approval, p95 khusus endpoint daftar migration turun dari 53.29 ke 15.78 ms pada database sama dan dari 52.33 ke 13.69 ms pada database berbeda. Job sukses per detik turun dalam pengujian ini, seiring dengan bertambahnya polling ulang yang berjeda satu detik. [Migration indeks approval](internal/store/migrations/000006_latest_approval_index.up.sql)
 
 ## Menghentikan Aplikasi
 
