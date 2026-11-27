@@ -1,0 +1,1 @@
+DROP INDEX approval_requests_migration_latest_idx;

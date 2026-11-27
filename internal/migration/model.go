@@ -8,19 +8,24 @@ const (
 	S_Executed string = "executed"
 	S_Failed   string = "failed"
 
-	StatusDraft    = S_Draft
-	StatusRunning  = S_Running
-	StatusExecuted = S_Executed
-	StatusFailed   = S_Failed
+	StatusDraft         = S_Draft
+	StatusRunning       = S_Running
+	StatusExecuted      = S_Executed
+	StatusFailed        = S_Failed
+	StatusPendingReview = "pending_review"
+	StatusApproved      = "approved"
+	StatusSuperseded    = "superseded"
 )
 
 type Migration struct {
-	ID         int
-	DatabaseID int
-	Version    *int
-	Title      string
-	SQL        string
-	Status     string
+	ID           int
+	DatabaseID   int
+	Version      *int
+	Title        string
+	SQL          string
+	Status       string
+	Active       bool
+	SupersededAt *time.Time
 
 	CreatedBy  int
 	ExecutedBy *int

@@ -2,6 +2,7 @@ package migration
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -17,34 +18,57 @@ func NewStore(pool *pgxpool.Pool) *Store {
 }
 
 func (s *Store) CreateDraft(ctx context.Context, databaseID int, title string, sql string, createdBy int) (*Migration, error) {
+	m, _, err := s.CreateDraftWithRevision(ctx, databaseID, title, sql, "", true, "Legacy draft", ModeSingle, BatchConfig{}, createdBy)
+	return m, err
+}
+
+func (s *Store) CreateDraftWithRevision(ctx context.Context, databaseID int, title, upSQL, downSQL string, irreversible bool, reason, mode string, cfg BatchConfig, createdBy int) (*Migration, *Revision, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
 	m := &Migration{
 		DatabaseID: databaseID,
 		Title:      title,
-		SQL:        sql,
+		SQL:        upSQL,
 		Status:     S_Draft,
 		CreatedBy:  createdBy,
 	}
-
-	query := "INSERT INTO migrations(database_id, title, sql, status, created_by, created_at) VALUES ($1, $2, $3, $4, $5, NOW()) RETURNING id, created_at"
-
-	err := s.pool.QueryRow(ctx, query, m.DatabaseID, m.Title, m.SQL, m.Status, m.CreatedBy).Scan(&m.ID, &m.CreatedAt)
+	err = tx.QueryRow(ctx, "INSERT INTO migrations(database_id, title, sql, status, created_by, created_at) VALUES ($1,$2,$3,$4,$5,NOW()) RETURNING id, created_at", m.DatabaseID, m.Title, m.SQL, m.Status, m.CreatedBy).Scan(&m.ID, &m.CreatedAt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create draft migration: %w", err)
+		return nil, nil, fmt.Errorf("failed to create draft migration: %w", err)
 	}
-
-	return m, nil
+	cfgBytes, _ := json.Marshal(cfg)
+	hash := revisionHash(upSQL, downSQL, irreversible, reason, mode, cfg)
+	r := &Revision{
+		MigrationID: m.ID, RevisionNo: 1, UpSQL: upSQL, DownSQL: downSQL,
+		Irreversible: irreversible, IrreversibleReason: reason, Mode: mode, BatchConfig: cfg,
+		Status: StatusDraft, ContentHash: hash, CreatedBy: createdBy,
+	}
+	err = tx.QueryRow(ctx, `INSERT INTO migration_revisions (migration_id, revision_no, up_sql, down_sql, irreversible, irreversible_reason, mode, batch_config, status, content_hash, created_by)
+          VALUES ($1,$2,$3,NULLIF($4,''),$5,$6,$7,$8,'draft',$9,$10) RETURNING id, created_at`, 
+		  r.MigrationID, r.RevisionNo, r.UpSQL, r.DownSQL, r.Irreversible, r.IrreversibleReason, r.Mode, cfgBytes, r.ContentHash, r.CreatedBy).Scan(&r.ID, &r.CreatedAt)
+	if err != nil {
+		return nil, nil, fmt.Errorf("create migration revision: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, nil, err
+	}
+	return m, r, nil
 }
 
 func (s *Store) GetByID(ctx context.Context, id int) (*Migration, error) {
 	m := &Migration{}
 
-	query := `SELECT id, database_id, version, title, sql, status,
+	query := `SELECT id, database_id, version, title, sql, status, active,
 			created_by, executed_by, created_at, updated_at,
 			start_time, finish_time, error_message
 			FROM migrations
 			WHERE id = $1`
 
-	err := s.pool.QueryRow(ctx, query, id).Scan(&m.ID, &m.DatabaseID, &m.Version, &m.Title, &m.SQL, &m.Status,
+	err := s.pool.QueryRow(ctx, query, id).Scan(&m.ID, &m.DatabaseID, &m.Version, &m.Title, &m.SQL, &m.Status, &m.Active,
 		&m.CreatedBy, &m.ExecutedBy, &m.CreatedAt, &m.UpdatedAt, &m.StartTime, &m.FinishTime, &m.ErrorMessage)
 
 	if err != nil {

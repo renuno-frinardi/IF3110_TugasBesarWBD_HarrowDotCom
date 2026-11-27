@@ -3,12 +3,10 @@ package explain
 // Import pkg
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pganalyze/pg_query_go/v6"
@@ -65,33 +63,6 @@ func statementKinds(sqlText string) ([]string, bool) {
 		}
 	}
 	return kinds, true
-}
-
-// Menghilangkan komen SQL
-func stripSQLComments(sqlText string) string {
-	lines := strings.Split(sqlText, "\n")
-	var kept []string
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "--") {
-			continue
-		}
-		kept = append(kept, line)
-	}
-	res := strings.Join(kept, "\n")
-	for {
-		start := strings.Index(res, "/*")
-		if start == -1 {
-			break
-		}
-		end := strings.Index(res[start+2:], "*/")
-		if end == -1 {
-			res = res[:start]
-			break
-		}
-		res = res[:start] + " " + res[start+2+end+2:]
-	}
-	return res
 }
 
 // Menjalankan EXPLAIN atau EXPLAIN ANALYZE terhadap suatu database postgres
@@ -169,83 +140,4 @@ func ExplainPostgres(ctx context.Context, target *pgxpool.Pool, sqlText string, 
 		Message:       strings.Join(lines, "\n"),
 		PlanLines:     lines,
 	}, nil
-}
-
-// Melakukan eksekusi transaksional dari suatu statement SQL
-func ExecuteMigrationTransactional(ctx context.Context, platformDB *sql.DB, target *pgxpool.Pool, migrationID int, actorUserID int64) error {
-	var dbID int
-	var sqlText, status string
-	err := platformDB.QueryRowContext(ctx, `
-		SELECT database_id, sql, status FROM migrations WHERE id = $1
-	`, migrationID).Scan(&dbID, &sqlText, &status)
-	if err != nil {
-		return fmt.Errorf("lookup migration %d: %w", migrationID, err)
-	}
-	if status != "draft" && status != "failed" {
-		return fmt.Errorf("migration %d cannot be executed from status %q", migrationID, status)
-	}
-
-	startTime := time.Now().UTC()
-	_, _ = platformDB.ExecContext(ctx, `
-		UPDATE migrations
-		SET status = 'running', executed_by = $1, start_time = $2, updated_at = NOW(), error_message = NULL
-		WHERE id = $3
-	`, actorUserID, startTime, migrationID)
-
-	tx, err := target.Begin(ctx)
-	if err != nil {
-		finishTime := time.Now().UTC()
-		errMsg := err.Error()
-		_, _ = platformDB.ExecContext(ctx, `
-			UPDATE migrations
-			SET status = 'failed', finish_time = $1, updated_at = NOW(), error_message = $2
-			WHERE id = $3
-		`, finishTime, errMsg, migrationID)
-		return fmt.Errorf("begin target transaction: %w", err)
-	}
-
-	if _, execErr := tx.Exec(ctx, sqlText); execErr != nil {
-		_ = tx.Rollback(ctx)
-		finishTime := time.Now().UTC()
-		errMsg := execErr.Error()
-		_, _ = platformDB.ExecContext(ctx, `
-			UPDATE migrations
-			SET status = 'failed', finish_time = $1, updated_at = NOW(), error_message = $2
-			WHERE id = $3
-		`, finishTime, errMsg, migrationID)
-		return fmt.Errorf("migration execution failed (rolled back): %w", execErr)
-	}
-
-	if commitErr := tx.Commit(ctx); commitErr != nil {
-		_ = tx.Rollback(ctx)
-		finishTime := time.Now().UTC()
-		errMsg := commitErr.Error()
-		_, _ = platformDB.ExecContext(ctx, `
-			UPDATE migrations
-			SET status = 'failed', finish_time = $1, updated_at = NOW(), error_message = $2
-			WHERE id = $3
-		`, commitTimeOrNow(finishTime), errMsg, migrationID)
-		return fmt.Errorf("commit target transaction: %w", commitErr)
-	}
-
-	finishTime := time.Now().UTC()
-	_, err = platformDB.ExecContext(ctx, `
-		UPDATE migrations
-		SET status = 'executed',
-		    version = COALESCE((SELECT MAX(m2.version) FROM migrations m2 WHERE m2.database_id = $1), 0) + 1,
-		    executed_by = $2,
-		    finish_time = $3,
-		    updated_at = NOW(),
-		    error_message = NULL
-		WHERE id = $4
-	`, dbID, actorUserID, finishTime, migrationID)
-	return err
-}
-
-// Mengecek dan mengembalikan waktu commit
-func commitTimeOrNow(t time.Time) time.Time {
-	if t.IsZero() {
-		return time.Now().UTC()
-	}
-	return t
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
+	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/store"
 )
 
 // go test ./internal/migration -run '^TestCreateDraft$' -v -count=1
@@ -331,22 +333,35 @@ func TestCreateDraft(t *testing.T) {
 func openTestDatabase(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 
-	if err := godotenv.Load("../../.env"); err != nil {
+	if err := godotenv.Load("../../.env"); err != nil && !os.IsNotExist(err) {
 		t.Fatal("failed to read the .env file")
 	}
 
-	url := os.Getenv("TEST_DATABASE_URL")
-	if url == "" {
-		t.Fatal("TEST_DATABASE_URL is not configured")
+	host := os.Getenv("POSTGRES_HOST")
+	if host == "" {
+		host = "localhost"
 	}
+	port, err := strconv.Atoi(os.Getenv("POSTGRES_PORT"))
+	if err != nil || port < 1 {
+		port = 5433
+	}
+	testDB := os.Getenv("POSTGRES_TEST_DB")
+	if testDB == "" {
+		t.Fatal("POSTGRES_TEST_DB is not configured")
+	}
+	if !strings.HasSuffix(testDB, "_test") {
+		t.Fatal("the test database name must end with _test")
+	}
+	user := os.Getenv("POSTGRES_USER")
+	if user == "" {
+		user = "harrow"
+	}
+	password := os.Getenv("POSTGRES_PASSWORD")
 
+	url := store.PostgresAppURL(host, port, testDB, user, password)
 	config, err := pgxpool.ParseConfig(url)
 	if err != nil {
 		t.Fatal("database configuration is invalid")
-	}
-
-	if !strings.HasSuffix(config.ConnConfig.Database, "_test") {
-		t.Fatal("the test database name must end with _test")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -359,7 +374,7 @@ func openTestDatabase(t *testing.T) *pgxpool.Pool {
 	t.Cleanup(pool.Close)
 
 	if err := pool.Ping(ctx); err != nil {
-		t.Fatal("database is unreachable")
+		t.Skipf("skipping integration test: database is unreachable (%v)", err)
 	}
 
 	return pool

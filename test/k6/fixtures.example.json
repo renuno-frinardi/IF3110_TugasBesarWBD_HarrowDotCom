@@ -1,0 +1,12 @@
+{
+  "same_database": [
+    { "database_id": 3, "migration_id": 101 },
+    { "database_id": 3, "migration_id": 102 }
+  ],
+  "different_databases": [
+    { "database_id": 3, "migration_id": 201 },
+    { "database_id": 8, "migration_id": 301 },
+    { "database_id": 3, "migration_id": 202 },
+    { "database_id": 8, "migration_id": 302 }
+  ]
+}

@@ -29,7 +29,7 @@ func TestExecute(t *testing.T) {
 	targetName := name + "_test"
 	_, err := pool.Exec(ctx, "CREATE DATABASE "+pgx.Identifier{targetName}.Sanitize())
 	if err != nil {
-		t.Fatal("failed to create the test target database; the TEST_DATABASE_URL user requires CREATEDB privilege")
+		t.Fatal("failed to create the test target database; the POSTGRES_USER account requires CREATEDB privilege")
 	}
 	t.Cleanup(func() {
 		cleanupCtx, stop := context.WithTimeout(context.Background(), 10*time.Second)

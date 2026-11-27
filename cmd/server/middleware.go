@@ -3,16 +3,38 @@ package main
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/auth"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/authz"
-	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/web"
+	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/telemetry"
 )
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (sr *statusRecorder) WriteHeader(code int) {
+	sr.status = code
+	sr.ResponseWriter.WriteHeader(code)
+}
 
 func (app *application) routes() http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(web.StaticFS()))))
+	mux.HandleFunc("GET /session", app.requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		user, _ := auth.UserFromContext(r.Context())
+		session, _ := auth.SessionFromContext(r.Context())
+
+		writeJSON(w, http.StatusOK, map[string]any{
+			"id":         user.ID,
+			"username":   user.Username,
+			"is_admin":   user.IsAdmin,
+			"csrf_token": auth.CSRFToken(session),
+		})
+	}))
 
 	// Public authentication endpoints
 	mux.HandleFunc("/login", app.loginHandler)
@@ -55,6 +77,7 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("/groups/delete", app.requireAuth(app.requirePermission(authz.ActionPlatformAdmin, nil, app.groupDeleteHandler)))
 	mux.HandleFunc("/groups/members/add", app.requireAuth(app.requirePermission(authz.ActionPlatformAdmin, nil, app.groupAddMemberHandler)))
 	mux.HandleFunc("/groups/members/remove", app.requireAuth(app.requirePermission(authz.ActionPlatformAdmin, nil, app.groupRemoveMemberHandler)))
+	mux.HandleFunc("/groups/leader", app.requireAuth(app.requirePermission(authz.ActionPlatformAdmin, nil, app.groupSetLeaderHandler)))
 
 	mux.HandleFunc("/access", app.requireAuth(app.requirePermission(authz.ActionPlatformAdmin, nil, app.accessHandler)))
 	mux.HandleFunc("/access/grant", app.requireAuth(app.requirePermission(authz.ActionPlatformAdmin, nil, app.accessGrantHandler)))
@@ -62,7 +85,49 @@ func (app *application) routes() http.Handler {
 
 	mux.HandleFunc("/audit-logs", app.requireAuth(app.requirePermission(authz.ActionPlatformAdmin, nil, app.auditLogsHandler)))
 
-	return auth.SecurityHeadersMiddleware(app.logger, mux)
+	// Migration workflow JSON API
+	mux.HandleFunc("GET /v2/databases/{db}/migrations", app.requireAuth(app.migrationDatabaseListHandler))
+	mux.HandleFunc("POST /v2/databases/{db}/migrations", app.requireAuth(app.migrationDraftCreateHandler))
+	mux.HandleFunc("GET /v2/migrations/{id}", app.requireAuth(app.migrationDetailHandler))
+	mux.HandleFunc("PATCH /v2/migrations/{id}", app.requireAuth(app.migrationDraftUpdateHandler))
+	mux.HandleFunc("POST /v2/migrations/{id}/submit", app.requireAuth(app.migrationReviewSubmitHandler))
+	mux.HandleFunc("POST /v2/migrations/{id}/approve", app.requireAuth(app.migrationApprovalHandler))
+	mux.HandleFunc("POST /v2/migrations/{id}/execute", app.requireAuth(app.migrationExecutionHandler))
+	mux.HandleFunc("POST /v2/migrations/{id}/rollback", app.requireAuth(app.migrationRollbackRequestHandler))
+	mux.HandleFunc("POST /v2/migrations/{id}/forward", app.requireAuth(app.migrationForwardRequestHandler))
+	mux.HandleFunc("GET /v2/reviews", app.requireAuth(app.reviewListHandler))
+	mux.HandleFunc("GET /v2/databases/{db}/history", app.requireAuth(app.migrationHistoryHandler))
+	mux.HandleFunc("GET /v2/jobs/{id}", app.requireAuth(app.jobDetailHandler))
+	mux.HandleFunc("POST /v2/jobs/{id}/resume", app.requireAuth(app.jobResumeHandler))
+	mux.HandleFunc("POST /v2/jobs/{id}/cancel-batches", app.requireAuth(app.jobBatchCancelHandler))
+	mux.HandleFunc("PUT /v2/groups/{id}/leader", app.requireAuth(app.requirePermission(authz.ActionPlatformAdmin, nil, app.groupLeaderAPIHandler)))
+
+	api := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		corrID := strings.TrimSpace(r.Header.Get("X-Correlation-ID"))
+		if corrID == "" {
+			corrID = telemetry.NewCorrelationID()
+		}
+		w.Header().Set("X-Correlation-ID", corrID)
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+
+		ctx := telemetry.WithCorrelationID(r.Context(), corrID)
+
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		start := time.Now()
+		mux.ServeHTTP(rec, r.WithContext(ctx))
+		dur := time.Since(start)
+
+		if app.slogLogger != nil {
+			app.slogLogger.InfoContext(ctx, "http.request",
+				"method", r.Method,
+				"path", auth.SanitizeURL(r.URL),
+				"status", strconv.Itoa(rec.status),
+				"duration_ms", float64(dur.Microseconds())/1000.0,
+			)
+		}
+	})
+	return auth.SecurityHeadersMiddleware(app.logger, api)
 }
 
 func (app *application) requireAuth(next http.HandlerFunc) http.HandlerFunc {
@@ -89,11 +154,13 @@ func (app *application) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 
 		if err := auth.ValidateRequestCSRF(r, sess); err != nil {
 			ctx := auth.WithUserAndSession(r.Context(), user, sess)
+			ctx = telemetry.WithActorID(ctx, int(user.ID))
 			app.renderForbidden(w, r.WithContext(ctx), "Invalid or missing CSRF token.")
 			return
 		}
 
 		ctx := auth.WithUserAndSession(r.Context(), user, sess)
+		ctx = telemetry.WithActorID(ctx, int(user.ID))
 		next(w, r.WithContext(ctx))
 	}
 }
@@ -154,22 +221,20 @@ func (app *application) checkDatabasePermission(w http.ResponseWriter, r *http.R
 }
 
 func (app *application) handleUnauthenticated(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	accept := r.Header.Get("Accept")
-	if strings.Contains(accept, "application/json") || strings.HasPrefix(r.URL.Path, "/api/") {
-		w.WriteHeader(http.StatusUnauthorized)
-		app.renderWithContext(w, r, "error", pageData{
-			Title:        "401 Unauthorized",
-			Active:       "login",
-			ErrorMessage: "Authentication is required to access this resource.",
-		})
+	if strings.Contains(accept, "application/json") || strings.HasPrefix(r.URL.Path, "/v2/") {
+		writeJSON(w, http.StatusUnauthorized, apiError{Error: "Silakan login kembali."})
 		return
 	}
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
 func (app *application) renderForbidden(w http.ResponseWriter, r *http.Request, message string) {
-	if message == "" {
-		message = "Access denied: you do not have permission to perform this action."
+	w.Header().Set("Cache-Control", "no-store")
+	if strings.Contains(r.Header.Get("Accept"), "application/json") || strings.HasPrefix(r.URL.Path, "/v2/") {
+		writeJSON(w, http.StatusForbidden, apiError{Error: message})
+		return
 	}
 	w.WriteHeader(http.StatusForbidden)
 	app.renderWithContext(w, r, "error", pageData{

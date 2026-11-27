@@ -38,9 +38,8 @@ type SessionConfig struct {
 // Mengembalikan parameter sesi default (idle 30m, absolute 8h, rotation 10m, grace 30s),
 // overridable melalui .env
 func DefaultSessionConfig() SessionConfig {
-	secure := strings.EqualFold(os.Getenv("APP_ENV"), "production") ||
-		strings.EqualFold(os.Getenv("COOKIE_SECURE"), "true") ||
-		os.Getenv("COOKIE_SECURE") == "1"
+	cookieSecure := strings.TrimSpace(os.Getenv("COOKIE_SECURE"))
+	secure := strings.EqualFold(cookieSecure, "true") || cookieSecure == "1"
 
 	cookieName := strings.TrimSpace(os.Getenv("SESSION_COOKIE_NAME"))
 	if cookieName == "" {

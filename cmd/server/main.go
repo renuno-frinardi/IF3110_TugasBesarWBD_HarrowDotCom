@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"strconv"
@@ -13,12 +14,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/admin"
+	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/async"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/auth"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/authz"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/explain"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/migration"
 	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/store"
-	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/web"
+	"github.com/renuno-frinardi/IF3110_TugasBesarWBD_HarrowDotCom/internal/telemetry"
 )
 
 type pageData struct {
@@ -86,14 +88,18 @@ type application struct {
 	adminStore    *admin.Store
 	migStore      *migration.Store
 	migService    *migration.Service
+	jobQueue      *async.Queue
 	encryptionKey string
 	logger        *log.Logger
+	slogLogger    *slog.Logger
 }
 
 func main() {
 	redactingOut := auth.NewRedactingWriter(os.Stderr)
 	log.SetOutput(redactingOut)
 	logger := log.New(redactingOut, "", log.LstdFlags)
+	slogLogger := telemetry.NewJSONLogger(os.Stdout, slog.LevelInfo)
+	slog.SetDefault(slogLogger)
 
 	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
 		log.Fatalf("failed to load .env: %v", err)
@@ -102,11 +108,13 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	postgresURL := envOrDefault("POSTGRES_DATABASE_URL", store.PostgresAppURL(
-		envOrDefault("POSTGRES_HOST", "localhost"), envIntOrDefault("POSTGRES_PORT", 5433),
-		envOrDefault("POSTGRES_DB", "harrow_db"), envOrDefault("POSTGRES_USER", "harrow"),
+	postgresURL := store.PostgresAppURL(
+		envOrDefault("POSTGRES_HOST", "localhost"),
+		envIntOrDefault("POSTGRES_PORT", 5433),
+		envOrDefault("POSTGRES_DB", "harrow_db"),
+		envOrDefault("POSTGRES_USER", "harrow"),
 		os.Getenv("POSTGRES_PASSWORD"),
-	))
+	)
 
 	postgresDB, err := store.OpenDB(ctx, "postgresql", postgresURL)
 	if err != nil {
@@ -158,6 +166,9 @@ func main() {
 	dbAuthz := authz.NewDBAuthorizer(postgresDB.DB)
 	adminStore := admin.NewStore(postgresDB.DB, authSvc, sessMgr)
 	migStore := migration.NewStore(pgPool)
+	jobQueue := async.NewQueue(pgPool, slogLogger, envIntOrDefault("WORKER_MAX_RETRIES", 3))
+	migSvc := migration.NewServiceWithPublisher(migStore, migration.NewDatabaseAccess(pgPool), jobQueue)
+	migSvc.SetLogger(slogLogger)
 
 	app := &application{
 		stores:        stores,
@@ -167,17 +178,19 @@ func main() {
 		dbAuthorizer:  dbAuthz,
 		adminStore:    adminStore,
 		migStore:      migStore,
-		migService:    migration.NewService(migStore, migration.NewDatabaseAccess(pgPool)),
+		migService:    migSvc,
+		jobQueue:      jobQueue,
 		encryptionKey: os.Getenv("ENCRYPTION_KEY"),
 		logger:        logger,
+		slogLogger:    slogLogger,
 	}
 
-	port := os.Getenv("PORT")
+	port := os.Getenv("APP_PORT")
 	if port == "" {
 		port = "8080"
 	}
 
-	logger.Printf("Harrow is running at http://localhost:%s", port)
+	slogLogger.Info("server.started", "port", port, "status", "listening")
 
 	if err := http.ListenAndServe(":"+port, app.routes()); err != nil {
 		log.Fatalf("Server stopped: %v", err)
@@ -200,13 +213,33 @@ func envIntOrDefault(key string, fallback int) int {
 }
 
 func render(w http.ResponseWriter, page string, data pageData) {
-	tmpl, err := web.ParsePage(page)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Template error: %v", err), http.StatusInternalServerError)
-		return
+	response := map[string]any{
+		"page":           page,
+		"title":          data.Title,
+		"error":          data.Error,
+		"errorMessage":   data.ErrorMessage,
+		"success":        data.Success,
+		"is_admin":       data.IsAdmin,
+		"csrf_token":     data.CSRFToken,
+		"stats":          data.Stats,
+		"connections":    data.Connections,
+		"postgres":       data.PostgreSQLConnections,
+		"connection":     data.Connection,
+		"explorer":       data.Explorer,
+		"can_edit":       data.CanEditMigration,
+		"users":          data.Users,
+		"groups":         data.Groups,
+		"grants":         data.Grants,
+		"audit_logs":     data.AuditLogs,
+		"explain_result": data.ExplainResult,
+	}
+	if data.CurrentUser != nil {
+		response["username"] = data.CurrentUser.Username
 	}
 
-	if err := tmpl.ExecuteTemplate(w, "base", data); err != nil {
-		log.Printf("Render %s: %v", page, err)
-	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func navigate(w http.ResponseWriter, _ *http.Request, target string, _ int) {
+	writeJSON(w, http.StatusOK, map[string]string{"navigate": target})
 }

@@ -17,20 +17,26 @@ import (
 )
 
 func TestMariaDBExecution(t *testing.T) {
-	name := os.Getenv("TEST_MARIADB_DATABASE")
+	_ = godotenv.Load("../../.env")
+
+	name := os.Getenv("MARIADB_TEST_DATABASE")
 	if name == "" {
-		t.Skip("TEST_MARIADB_DATABASE is not configured")
+		t.Skip("MARIADB_TEST_DATABASE is not configured")
 	}
 	if !strings.HasSuffix(name, "_test") {
 		t.Fatal("gunakan database dengan akhiran _test")
 	}
-	env, err := godotenv.Read("../../.env")
-	if err != nil {
-		t.Fatal(err)
+	host := os.Getenv("MARIADB_HOST")
+	if host == "" {
+		host = "localhost"
+	}
+	port := os.Getenv("MARIADB_PORT")
+	if port == "" {
+		port = "3307"
 	}
 	config := mysql.NewConfig()
-	config.User, config.Passwd, config.DBName = env["MARIADB_USER"], env["MARIADB_PASSWORD"], name
-	config.Net, config.Addr = "tcp", net.JoinHostPort("localhost", env["MARIADB_PORT"])
+	config.User, config.Passwd, config.DBName = os.Getenv("MARIADB_USER"), os.Getenv("MARIADB_PASSWORD"), name
+	config.Net, config.Addr = "tcp", net.JoinHostPort(host, port)
 	target, err := sql.Open("mysql", config.FormatDSN())
 	if err != nil {
 		t.Fatal("failed to open the test connection")
@@ -38,6 +44,9 @@ func TestMariaDBExecution(t *testing.T) {
 	defer target.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	if err := target.PingContext(ctx); err != nil {
+		t.Skipf("skipping MariaDB test: %v", err)
+	}
 	table := fmt.Sprintf("barang_%d", time.Now().UnixNano())
 	if _, err := target.ExecContext(ctx, "CREATE TABLE "+table+" (id INT PRIMARY KEY, nama VARCHAR(100), INDEX(nama)) ENGINE=InnoDB"); err != nil {
 		t.Fatal(err)
