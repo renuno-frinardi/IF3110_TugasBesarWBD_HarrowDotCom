@@ -1,15 +1,21 @@
+import { fileURLToPath } from 'node:url'
 import react from '@vitejs/plugin-react'
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 
-// https://vite.dev/config/
-export default defineConfig({
-  plugins: [react()],
-  server: {
-    proxy: {
-      '/api': {
-        target: 'http://127.0.0.1:8080',
-        rewrite: (path) => path.replace(/^\/api/, ''),
+export default defineConfig(({ mode }) => {
+  const root = fileURLToPath(new URL('..', import.meta.url))
+  const env = loadEnv(mode, root, ['HARROW_API_URL', 'APP_PORT', 'PORT'])
+  const target = env.HARROW_API_URL || `http://127.0.0.1:${env.APP_PORT || env.PORT || '8080'}`
+
+  return {
+    plugins: [react()],
+    server: {
+      proxy: {
+        '/api/': {
+          target,
+          rewrite: path => path.slice('/api'.length),
+        },
       },
     },
-  },
+  }
 })

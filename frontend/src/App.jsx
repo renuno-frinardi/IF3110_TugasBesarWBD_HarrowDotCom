@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, setCSRF } from "./api";
 import { Field, Form, link } from "./ui";
 import { Workspace } from "./Workspace";
@@ -26,12 +26,14 @@ export default function App() {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [refresh, setRefresh] = useState(0);
+  const [menuOpen, setMenuOpen] = useState(false);
   const submitting = useRef(false);
   const { path, params } = readRoute(route);
   const publicPage = path === "/login" || path === "/signup";
 
   useEffect(() => {
     function changed() {
+      setMenuOpen(false);
       setRoute(currentRoute());
       setError("");
       setNotice("");
@@ -40,12 +42,12 @@ export default function App() {
     return () => window.removeEventListener("hashchange", changed);
   }, []);
 
-  function expire() {
+  const expire = useCallback(() => {
     setCSRF("");
-    setSession(null);
     setPage(null);
+    setSession(null);
     window.location.hash = "/login";
-  }
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -87,9 +89,9 @@ export default function App() {
     });
 
     return () => controller.abort();
-  }, [route, refresh, publicPage]);
+  }, [route, refresh, publicPage, expire]);
 
-  async function run(operation) {
+  async function run(operation, onError = setError) {
     if (submitting.current) return;
     submitting.current = true;
     setBusy(true);
@@ -109,7 +111,7 @@ export default function App() {
       }
     } catch (e) {
       if (e.status === 401 && !publicPage) expire();
-      else if (currentRoute() === start) setError(e.message);
+      else if (currentRoute() === start) onError(e.message);
     } finally {
       submitting.current = false;
       setBusy(false);
@@ -120,30 +122,73 @@ export default function App() {
     return run(() => api(endpoint, { method: "POST", form: body }));
   }
 
-  const ready = page?.route === route;
+  const ready = page?.route === route && (publicPage || session !== null);
 
   return (
     <>
       <header>
         <a href={link("/")} className="brand">Harrow</a>
+
         {!publicPage && session && (
-          <nav aria-label="Navigasi utama">
-            <a href={link("/")}>Dashboard</a>
-            <a href={link("/connections")}>Koneksi</a>
-            <a href={link("/reviews")}>Review saya</a>
-            {session.is_admin && <>
-              <a href={link("/users")}>Users</a>
-              <a href={link("/groups")}>Groups</a>
-              <a href={link("/access")}>Akses</a>
-              <a href={link("/audit-logs")}>Audit M1</a>
-            </>}
-            <button disabled={busy} onClick={() => run(async () => {
-              await api("/logout", { method: "POST", form: {} });
-              setSession(null);
-              setCSRF("");
-              return { navigate: "/login" };
-            })}>Keluar · {session.username}</button>
-          </nav>
+          <>
+            <button
+              type="button"
+              className="menu-toggle"
+              aria-controls="main-menu"
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen(open => !open)}
+            >
+              Menu
+            </button>
+
+            <div id="main-menu" data-open={menuOpen}>
+              <nav
+                id="main-nav"
+                aria-label="Navigasi utama"
+                onClick={event => {
+                  if (event.target.closest("a")) setMenuOpen(false);
+                }}
+              >
+                <a href={link("/")} aria-current={path === "/" ? "page" : undefined}>
+                  Dashboard
+                </a>
+                <a href={link("/connections")}
+                  aria-current={path.startsWith("/connections") ? "page" : undefined}>
+                  Koneksi
+                </a>
+                <a href={link("/reviews")}
+                  aria-current={path === "/reviews" ? "page" : undefined}>
+                  Review Saya
+                </a>
+
+                {session.is_admin && (
+                  <>
+                    <a href={link("/users")}
+                      aria-current={path === "/users" ? "page" : undefined}>Users</a>
+                    <a href={link("/groups")}
+                      aria-current={path === "/groups" ? "page" : undefined}>Groups</a>
+                    <a href={link("/access")}
+                      aria-current={path === "/access" ? "page" : undefined}>Akses</a>
+                    <a href={link("/audit-logs")}
+                      aria-current={path === "/audit-logs" ? "page" : undefined}>
+                      Audit Logs
+                    </a>
+                  </>
+                )}
+              </nav>
+              <button
+                type="button"
+                className="logout-button"
+                disabled={busy}
+                onClick={() => run(async () => {
+                  await api("/logout", { method: "POST", form: {} });
+                  expire();
+                })}
+              >
+                Keluar
+              </button>
+            </div>
+          </>
         )}
       </header>
 
