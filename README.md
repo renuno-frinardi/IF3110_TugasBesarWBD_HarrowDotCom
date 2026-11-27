@@ -287,7 +287,30 @@ cd frontend && npm install && npm run dev
 
 ## Pengujian Beban dengan k6
 
-k6 digunakan untuk menguji performa proses pengajuan migrasi asinkron saat jumlah pengguna virtual meningkat. Skrip [`test/k6/stress.js`](test/k6/stress.js) secara bertahap menaikkan beban hingga 2x dan 4x jumlah pengguna normal, lalu mengamati pemulihan sistem. Pengujian mencatat waktu respons API, tingkat error, dan keberhasilan migrasi; skenarionya dapat menguji satu database atau beberapa database.
+k6 adalah alat *load testing* yang mensimulasikan banyak pengguna virtual (*virtual users/VUs*) untuk melihat respons aplikasi saat menerima beban. Pada proyek ini, [`test/k6/stress.js`](test/k6/stress.js) menguji alur migrasi asinkron: login, mengambil daftar migrasi, mengajukan migrasi yang sudah disetujui, lalu memantau status job sampai selesai.
+
+### Skenario
+
+Jumlah VUs dinaikkan bertahap dari 0 ke jumlah normal, 2x, lalu 4x, sebelum diturunkan kembali untuk mengamati pemulihan dan penyelesaian antrean. Secara default jumlah normal adalah **2 VUs** dan setiap tahap berlangsung **30 detik**. Pengujian bisa memilih salah satu skenario berikut:
+- `same_database`: beberapa job berjalan pada satu database target, untuk melihat perilaku antrean pada database yang sama.
+- `different_databases`: job dijalankan pada beberapa database target, untuk melihat perilaku sistem ketika beban tersebar.
+
+### Konfigurasi dan persiapan
+
+Sebelum menjalankan pengujian, aplikasi harus aktif di komputer lokal, k6 harus terpasang, dan file `fixtures.local.json` harus tersedia di folder `test/k6`. File fixture berisi ID migrasi yang sudah disetujui dan belum pernah dipakai; [`fixtures.example.json`](test/k6/fixtures.example.json) menunjukkan formatnya. Siapkan juga akun pengujian melalui variabel lingkungan berikut:
+
+| Variabel | Kegunaan | Nilai default |
+| --- | --- | --- |
+| `K6_USERNAME` / `K6_PASSWORD` | Kredensial untuk login ke aplikasi | Wajib diisi |
+| `K6_CASE` | Skenario yang dijalankan: `same_database` atau `different_databases` | `same_database` |
+| `K6_NORMAL_VUS` | Jumlah VUs pada beban normal; puncak pengujian mencapai 4x nilai ini | `2` |
+| `K6_STAGE_SECONDS` | Durasi setiap tahap kenaikan/penurunan beban dalam detik | `30` |
+
+Setelah persiapan, jalankan `k6 run stress.js` dari folder `test/k6`. Skrip hanya mengizinkan target `localhost`/`127.0.0.1`; jalankan pengujian pada lingkungan lokal dengan data uji, bukan pada layanan produksi.
+
+### Hasil yang diperiksa
+
+k6 merangkum waktu respons API, tingkat error, jumlah dan keberhasilan job, serta waktu antre dan waktu penyelesaian. Pengujian dianggap lulus jika *threshold* yang ditentukan skrip terpenuhi, yaitu p95 respons API di bawah **1 detik**, error API di bawah **1%**, keberhasilan job di atas **95%**, tidak ada job timeout atau fixture habis, serta ada job yang berhasil diajukan dan mencapai status akhir.
 
 ## Implementasi SAST dengan CodeQL
 
