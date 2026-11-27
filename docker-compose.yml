@@ -26,13 +26,21 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      PORT: "8080"
+      APP_PORT: "8080"
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       POSTGRES_DB: ${POSTGRES_DB:-harrow_db}
       POSTGRES_USER: ${POSTGRES_USER:-harrow}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Set ENCRYPTION_KEY in .env}
+      SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-harrow_session}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      SESSION_IDLE_TIMEOUT: ${SESSION_IDLE_TIMEOUT:-30m}
+      SESSION_ABSOLUTE_TIMEOUT: ${SESSION_ABSOLUTE_TIMEOUT:-8h}
+      SESSION_ROTATION_INTERVAL: ${SESSION_ROTATION_INTERVAL:-10m}
+      SESSION_GRACE_PERIOD: ${SESSION_GRACE_PERIOD:-30s}
+      SEED_ADMIN_USERNAME: ${SEED_ADMIN_USERNAME:-admin}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
       WORKER_MAX_RETRIES: ${WORKER_MAX_RETRIES:-3}
       OTEL_EXPORTER: ${OTEL_EXPORTER:-stdout}
     ports:
@@ -54,6 +62,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-harrow}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Set ENCRYPTION_KEY in .env}
+      WORKER_ID: ${WORKER_ID:-}
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-4}
       WORKER_POLL_INTERVAL_MS: ${WORKER_POLL_INTERVAL_MS:-500}
       WORKER_LEASE_TTL_SECONDS: ${WORKER_LEASE_TTL_SECONDS:-15}
@@ -71,13 +80,64 @@ services:
     ports:
       - "${FRONTEND_PORT:-5173}:80"
 
+  commerce-db:
+    image: postgres:18
+    restart: unless-stopped
+    command:
+      - "postgres"
+      - "-c"
+      - "max_connections=300"
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "work_mem=16MB"
+    environment:
+      POSTGRES_DB: ${COMMERCE_DB_NAME:-harrow_commerce}
+      POSTGRES_USER: ${COMMERCE_DB_USER:-commerce_admin}
+      POSTGRES_PASSWORD: ${COMMERCE_DB_PASSWORD:-commerce_secret_123}
+    ports:
+      - "${COMMERCE_DB_PORT:-5434}:5432"
+    volumes:
+      - commerce_db:/var/lib/postgresql
+      - ./scripts/commerce-db/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  commerce-db-init:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["harrow-seed-target-db"]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      commerce-db:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-harrow_db}
+      POSTGRES_USER: ${POSTGRES_USER:-harrow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Set ENCRYPTION_KEY in .env}
+      COMMERCE_DB_HOST: commerce-db
+      COMMERCE_DB_PORT: "5432"
+      COMMERCE_DB_NAME: ${COMMERCE_DB_NAME:-harrow_commerce}
+      COMMERCE_DB_USER: ${COMMERCE_DB_USER:-commerce_admin}
+      COMMERCE_DB_PASSWORD: ${COMMERCE_DB_PASSWORD:-commerce_secret_123}
+
   mariadb:
     image: mariadb:11
     profiles: ["mariadb"]
     restart: unless-stopped
     environment:
-      MARIADB_DATABASE: ${MARIADB_DATABASE:-harrow_db}
-      MARIADB_USER: ${MARIADB_USER:-harrow}
+      MARIADB_DATABASE: ${MARIADB_DATABASE:-harrow_mariadb}
+      MARIADB_USER: ${MARIADB_USER:-harrow_maria}
       MARIADB_PASSWORD: ${MARIADB_PASSWORD:?Set MARIADB_PASSWORD in .env}
       MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:?Set MARIADB_ROOT_PASSWORD in .env}
     ports:
@@ -92,4 +152,5 @@ services:
 
 volumes:
   postgres:
+  commerce_db:
   mariadb:
